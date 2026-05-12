@@ -362,7 +362,7 @@ function renderLogin() {
     <div class="login-container">
       <div class="glass-panel login-card fade-in">
         <div class="login-logo" style="margin-bottom: 1.5rem; display:flex; justify-content:center;">
-          <img src="/logo2.png" alt="Güntaş" style="max-height: 120px; width: auto; visibility: hidden;" onload="window.makeTransparent(this)">
+          <img src="/logo2.png" alt="Güntaş" style="max-height: 120px; width: auto;">
         </div>
         <p style="margin-bottom: 2rem; color: var(--color-secondary); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; font-size: 0.9rem;">Güntaş Audio System</p>
         
@@ -616,7 +616,7 @@ async function renderApp() {
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-brand" style="display:flex; justify-content:center; padding: 2rem 0;">
-          <img src="/logo2.png" alt="Logo" style="max-height: 120px; width: auto; visibility: hidden;" onload="window.makeTransparent(this)">
+          <img src="/logo2.png" alt="Logo" style="max-height: 120px; width: auto;">
         </div>
         
         <ul class="nav-menu">
@@ -789,7 +789,7 @@ function getBranchPlayerHTML(playlist) {
       
       <!-- Top Bar -->
       <div style="padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <img src="/app-icon.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
+        <img src="/logo2.png" alt="Güntaş" style="height: 60px;">
         <div style="display:flex; align-items:center; gap: 1rem;">
           <div style="display:flex; align-items:center; gap: 0.5rem; color: ${isOffline ? '#F44336' : '#4CAF50'};">
             <i class="ph ${isOffline ? 'ph-wifi-slash' : 'ph-wifi-high'}"></i>
