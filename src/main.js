@@ -219,6 +219,12 @@ class RadioPlayer {
     
     this.audio.addEventListener('playing', () => {
       console.log("Müzik başarıyla çalmaya başladı.");
+      this._updatePlaylistHighlight();
+      this._updatePlayPauseBtn(true);
+    });
+
+    this.audio.addEventListener('pause', () => {
+      this._updatePlayPauseBtn(false);
     });
   }
 
@@ -250,34 +256,51 @@ class RadioPlayer {
     }
   }
 
+  _updatePlaylistHighlight() {
+    const items = document.querySelectorAll('#branchPlaylistContainer > div');
+    items.forEach((el, i) => {
+      const isActive = i === this.currentIndex;
+      el.style.background = isActive ? 'rgba(0, 229, 255, 0.1)' : 'transparent';
+      el.style.borderLeft = isActive ? '4px solid var(--color-primary)' : '4px solid transparent';
+      const nameEl = el.querySelector('div:last-child');
+      if (nameEl) {
+        nameEl.style.fontWeight = isActive ? 'bold' : 'normal';
+        nameEl.style.color = isActive ? 'var(--color-primary)' : 'inherit';
+      }
+    });
+    // Scroll active item into view
+    if (items[this.currentIndex]) {
+      items[this.currentIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  _updatePlayPauseBtn(isPlaying) {
+    const btn = document.getElementById('playPauseBtn');
+    if (btn) {
+      btn.innerHTML = isPlaying
+        ? '<i class="ph ph-pause-circle"></i>'
+        : '<i class="ph ph-play-circle"></i>';
+    }
+  }
+
   playCurrent() {
     if (this.playlist.length === 0) return;
     const song = this.playlist[this.currentIndex];
-    
-    // Update the entire branch player UI to reflect the new active song
-    const content = document.getElementById('mainContent');
-    if (content && window.currentUser && window.currentUser.role === 'branch') {
-      content.innerHTML = getBranchPlayerHTML(this.playlist);
-      // Restore play state button visually
-      const btn = document.getElementById('playPauseBtn');
-      if(btn && this.isPlaying) {
-        btn.innerHTML = '<i class="ph ph-pause-circle"></i>';
-      }
-    }
+
+    // Update title
+    const titleEl = document.getElementById('nowPlayingTitle');
+    if (titleEl) titleEl.innerText = song.name;
+
+    // Update playlist highlight without full re-render
+    this._updatePlaylistHighlight();
 
     if (song.file_path) {
       if (this.audio.src !== song.file_path) {
         this.audio.src = song.file_path;
       }
-      
       if (this.isPlaying) {
-        this.audio.play().catch(e => {
-          console.error('Play error', e);
-        });
+        this.audio.play().catch(e => console.error('Play error', e));
       }
-      
-      const titleEl = document.getElementById('nowPlayingTitle');
-      if (titleEl) titleEl.innerText = song.name;
     } else {
       this.playNext();
     }
@@ -286,7 +309,15 @@ class RadioPlayer {
   playNext() {
     this.currentIndex++;
     if (this.currentIndex >= this.playlist.length) {
-      this.currentIndex = 0; // loop
+      this.currentIndex = 0;
+    }
+    this.playCurrent();
+  }
+
+  playPrev() {
+    this.currentIndex--;
+    if (this.currentIndex < 0) {
+      this.currentIndex = this.playlist.length - 1;
     }
     this.playCurrent();
   }
@@ -296,14 +327,12 @@ class RadioPlayer {
       this.start();
       return;
     }
-    const btn = document.getElementById('playPauseBtn');
     if (this.audio.paused) {
       this.audio.play();
-      if(btn) btn.innerHTML = '<i class="ph ph-pause-circle"></i>';
     } else {
       this.audio.pause();
-      if(btn) btn.innerHTML = '<i class="ph ph-play-circle"></i>';
     }
+    // Button state is updated via 'playing' and 'pause' audio events
   }
 
   setVolume(val) {
@@ -859,7 +888,7 @@ function getBranchPlayerHTML(playlist) {
         </div>
 
         <div style="display: flex; align-items: center; gap: 1.5rem;">
-          <button class="btn" style="background:transparent; border:none; color:white; font-size: 2rem;" onclick="window.radio.playNext()"><i class="ph ph-skip-back-circle"></i></button>
+          <button class="btn" style="background:transparent; border:none; color:white; font-size: 2rem;" onclick="window.radio.playPrev()"><i class="ph ph-skip-back-circle"></i></button>
           
           <button id="playPauseBtn" class="btn" style="background:transparent; border:none; color:var(--color-primary); font-size: 4rem; line-height: 1;" onclick="window.togglePlay()">
             <i class="ph ${window.radio.isPlaying ? 'ph-pause-circle' : 'ph-play-circle'}"></i>
