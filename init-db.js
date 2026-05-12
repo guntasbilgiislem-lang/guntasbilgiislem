@@ -41,14 +41,25 @@ async function initDb() {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         duration TEXT DEFAULT '3:00',
-        file_path TEXT
+        file_path TEXT,
+        order_index INT DEFAULT 0
       );
     `);
     console.log('Playlist table ready.');
 
+    // Create Admins table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admins (
+        username TEXT PRIMARY KEY,
+        password TEXT NOT NULL,
+        name TEXT DEFAULT 'Merkez Yönetim'
+      );
+    `);
+    console.log('Admins table ready.');
+
     // Insert dummy data if empty
-    const { rows } = await client.query('SELECT COUNT(*) FROM branches');
-    if (rows[0].count === '0') {
+    const { rows: branchCount } = await client.query('SELECT COUNT(*) FROM branches');
+    if (branchCount[0].count === '0') {
       await client.query(`
         INSERT INTO branches (id, name, password, status, music, sync, volume) VALUES 
         ('gun001', 'Trabzon Meydan', 'meydan001', 'online', 'Güntaş Radyo', 'Az önce', 75),
@@ -64,6 +75,14 @@ async function initDb() {
         ('m2', 'Tarkan - Yolla', '3:45');
       `);
       console.log('Dummy data inserted.');
+    }
+
+    const { rows: adminCount } = await client.query('SELECT COUNT(*) FROM admins');
+    if (adminCount[0].count === '0') {
+      await client.query(`
+        INSERT INTO admins (username, password, name) VALUES ('admin', 'admin', 'Merkez Yönetim');
+      `);
+      console.log('Default admin created.');
     }
 
   } catch (err) {

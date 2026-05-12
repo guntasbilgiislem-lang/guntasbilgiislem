@@ -13,12 +13,67 @@ const updateSW = registerSW({
   },
 });
 
-const app = document.querySelector('#app');
-
-// State
-let currentUser = null;
+const app = document.getElementById('app');
+let currentUser = JSON.parse(localStorage.getItem('current_user')) || null;
 let currentView = 'dashboard';
-let isOffline = !navigator.onLine;
+let isOffline = false;
+
+// TOAST NOTIFICATION SYSTEM
+window.showToast = (message, type = 'info') => {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  
+  let icon = 'ph-info';
+  if (type === 'success') icon = 'ph-check-circle';
+  if (type === 'error') icon = 'ph-warning-circle';
+
+  toast.innerHTML = `
+    <i class="ph ${icon}"></i>
+    <span>${message}</span>
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+};
+
+// LOGO BACKGROUND REMOVER (CHROMA KEY)
+window.makeTransparent = (img) => {
+  if (img.dataset.processed) return;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // Use the top-left pixel as target color
+  const r = data[0], g = data[1], b = data[2];
+  for (let i = 0; i < data.length; i += 4) {
+    const dr = Math.abs(data[i] - r);
+    const dg = Math.abs(data[i+1] - g);
+    const db = Math.abs(data[i+2] - b);
+    if (dr < 40 && dg < 40 && db < 40) data[i+3] = 0;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  img.src = canvas.toDataURL();
+  img.dataset.processed = "true";
+  img.style.visibility = 'visible';
+};
+
+isOffline = !navigator.onLine;
 
 // Initialize Network Listeners
 window.addEventListener('online', () => {
@@ -52,7 +107,7 @@ class RadioPlayer {
     });
     
     this.audio.addEventListener('error', (e) => {
-      alert("HATA: Ses dosyası yüklenemedi. (Format veya Bağlantı sorunu olabilir)");
+      showToast("HATA: Ses dosyası yüklenemedi. (Format veya Bağlantı sorunu olabilir)", 'error');
       console.error("Audio playback error:", this.audio.error);
     });
     
@@ -64,13 +119,13 @@ class RadioPlayer {
   start() {
     try {
       if (!this.playlist || this.playlist.length === 0) {
-        alert('Çalınacak müzik bulunamadı (Liste boş).');
+        showToast('Çalınacak müzik bulunamadı (Liste boş).', 'info');
         return;
       }
       
       this.isPlaying = true;
       this.audio.play().catch(e => {
-        alert('Oynatma reddedildi: ' + e.message);
+        showToast('Oynatma reddedildi: ' + e.message, 'error');
       });
       
       const btn = document.getElementById('radioStartBtn');
@@ -85,7 +140,7 @@ class RadioPlayer {
       
     } catch (e) {
       console.error('Start error:', e);
-      alert('Yayın başlatılamadı: ' + e.message);
+      showToast('Yayın başlatılamadı: ' + e.message, 'error');
     }
   }
 
@@ -171,7 +226,7 @@ window.changeVolume = (val) => window.radio.setVolume(val);
 window.toggleMute = () => window.radio.toggleMute();
 window.toggleFullScreen = () => {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(err => alert("Tam ekran hatası: " + err.message));
+    document.documentElement.requestFullscreen().catch(err => showToast("Tam ekran hatası: " + err.message, 'error'));
   } else {
     document.exitFullscreen();
   }
@@ -191,10 +246,12 @@ async function handleLogin(e) {
   try {
     currentUser = await api.login(user, pass);
     offlineAudio.startRecording(); // Start caching audio
+    showToast(`Hoşgeldiniz, ${currentUser.name}`, 'success');
     renderApp();
   } catch (error) {
     errorEl.textContent = error.message;
     errorEl.style.display = 'block';
+    showToast(error.message, 'error');
     document.querySelector('.login-card').classList.add('shake');
     setTimeout(() => document.querySelector('.login-card').classList.remove('shake'), 500);
     btn.innerHTML = '<i class="ph ph-sign-in"></i> Giriş Yap';
@@ -224,17 +281,17 @@ function navigateTo(view) {
 
 function renderLogin() {
   app.innerHTML = `
-    <div class="login-container fade-in">
-      <div class="glass-panel login-card">
-        <div class="logo-container" style="margin-bottom: 1.5rem; display:flex; justify-content:center;">
-          <img src="/logo1.jpg" alt="Güntaş Logo" style="max-height: 80px; border-radius:8px;">
+    <div class="login-container">
+      <div class="glass-panel login-card fade-in">
+        <div class="login-logo" style="margin-bottom: 1.5rem; display:flex; justify-content:center;">
+          <img src="/logo2.png" alt="Güntaş" style="max-height: 120px; width: auto; visibility: hidden;" onload="window.makeTransparent(this)">
         </div>
-        <p class="text-muted" style="margin-bottom: 2rem;">Şube Yönetim Portalı</p>
+        <p style="margin-bottom: 2rem; color: var(--color-secondary); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; font-size: 0.9rem;">Güntaş Audio System</p>
         
         <form id="loginForm">
           <div class="input-group">
             <label for="username">Kullanıcı Adı</label>
-            <input type="text" id="username" class="input-field" placeholder="Örn: gun001" required>
+            <input type="text" id="username" class="input-field" placeholder="admin" required>
           </div>
           <div class="input-group">
             <label for="password">Şifre</label>
@@ -257,9 +314,10 @@ window.deleteBranch = async (id) => {
   if(confirm('Şubeyi silmek istediğinize emin misiniz?')) {
     try {
       await api.removeBranch(id);
+      showToast('Şube başarıyla silindi.', 'success');
       renderApp();
     } catch (e) {
-      alert('Hata: ' + e.message);
+      showToast('Hata: ' + e.message, 'error');
     }
   }
 };
@@ -278,9 +336,10 @@ window.addBranchForm = async (e) => {
       await api.addBranch({ name, id, password });
     }
     window.editingBranchId = null;
+    showToast('Şube bilgileri başarıyla kaydedildi.', 'success');
     renderApp();
   } catch (err) {
-    alert('Hata: ' + err.message);
+    showToast('Hata: ' + err.message, 'error');
   }
 };
 
@@ -299,9 +358,10 @@ window.deleteCampaign = async (id) => {
   if(confirm('Kampanyayı silmek istediğinize emin misiniz?')) {
     try {
       await api.removeCampaign(id);
+      showToast('Kampanya silindi.', 'success');
       renderApp();
     } catch (e) {
-      alert('Hata: ' + e.message);
+      showToast('Hata: ' + e.message, 'error');
     }
   }
 };
@@ -313,7 +373,7 @@ window.addCampaignForm = async (e) => {
   const file = fileInput.files[0];
 
   if (!file) {
-    alert('Lütfen bir kampanya ses dosyası seçin!');
+    showToast('Lütfen bir kampanya ses dosyası seçin!', 'info');
     return;
   }
 
@@ -325,9 +385,10 @@ window.addCampaignForm = async (e) => {
     const fileUrl = await api.uploadCampaignFile(file);
     await api.addCampaign({ name, frequency: freq, file_path: fileUrl });
     
+    showToast('Kampanya başarıyla eklendi.', 'success');
     renderApp();
   } catch (e) {
-    alert('Hata: ' + e.message);
+    showToast('Hata: ' + e.message, 'error');
     document.getElementById('addCampBtn').innerHTML = '<i class="ph ph-plus"></i> Kampanyayı Ekle';
     document.getElementById('addCampBtn').disabled = false;
   }
@@ -337,9 +398,10 @@ window.deleteSong = async (id) => {
   if(confirm('Şarkıyı listeden çıkarmak istediğinize emin misiniz?')) {
     try {
       await api.removeSong(id);
+      showToast('Şarkı listeden çıkarıldı.', 'success');
       renderApp();
     } catch (e) {
-      alert('Hata: ' + e.message);
+      showToast('Hata: ' + e.message, 'error');
     }
   }
 };
@@ -350,7 +412,7 @@ window.addSongForm = async (e) => {
   const file = fileInput.files[0];
   
   if (!file) {
-    alert('Lütfen bir MP3 veya ses dosyası seçin!');
+    showToast('Lütfen bir MP3 veya ses dosyası seçin!', 'info');
     return;
   }
 
@@ -369,19 +431,20 @@ window.addSongForm = async (e) => {
       file_path: fileUrl 
     });
 
+    showToast('Müzik başarıyla eklendi.', 'success');
     renderApp();
   } catch (err) {
-    alert('Hata: ' + err.message);
+    showToast('Hata: ' + err.message, 'error');
     document.getElementById('addSongBtn').innerHTML = '<i class="ph ph-upload"></i> Yükle / Ekle';
     document.getElementById('addSongBtn').disabled = false;
   }
 };
 
 window.playSong = (url) => {
-  if (!url) return alert('Bu parçanın ses dosyası bulunamadı.');
+  if (!url) return showToast('Bu parçanın ses dosyası bulunamadı.', 'error');
   const player = new Audio(url);
   player.play();
-  alert('Çalınıyor: ' + url);
+  showToast('Önizleme başlatıldı.', 'info');
 };
 
 window.moveSong = async (id, direction) => {
@@ -411,7 +474,35 @@ window.moveSong = async (id, direction) => {
     const orderedIds = currentPlaylistData.map(s => s.id);
     await api.reorderPlaylist(orderedIds);
   } catch(e) {
-    alert('Sıralama kaydedilemedi: ' + e.message);
+    showToast('Sıralama kaydedilemedi: ' + e.message, 'error');
+  }
+};
+
+window.updatePasswordForm = async (e) => {
+  e.preventDefault();
+  const newPass = document.getElementById('newAdminPass').value;
+  const confirmPass = document.getElementById('confirmAdminPass').value;
+  
+  if (newPass !== confirmPass) {
+    alert('Şifreler uyuşmuyor!');
+    return;
+  }
+  
+  try {
+    const btn = e.target.querySelector('button');
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Güncelleniyor...';
+    btn.disabled = true;
+    
+    await api.updateAdminPassword(newPass);
+    
+    showToast('Admin şifresi başarıyla güncellendi.', 'success');
+    e.target.reset();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  } finally {
+    const btn = e.target.querySelector('button');
+    btn.innerHTML = '<i class="ph ph-check"></i> Şifreyi Güncelle';
+    btn.disabled = false;
   }
 };
 
@@ -420,7 +511,7 @@ let currentPlaylistData = [];
 async function renderApp() {
   if (currentUser.role === 'branch') {
     try {
-      currentPlaylistData = await api.fetchPlaylist();
+      currentPlaylistData = await api.fetchPlaylist(currentUser.id);
       
       // PRELOAD THE FIRST SONG TO BYPASS AUTOPLAY RESTRICTIONS
       if (currentPlaylistData && currentPlaylistData.length > 0) {
@@ -446,8 +537,8 @@ async function renderApp() {
     <div class="dashboard-layout fade-in" style="${isOffline ? 'margin-top: 30px;' : ''}">
       <!-- Sidebar -->
       <aside class="sidebar">
-        <div class="sidebar-brand" style="display:flex; justify-content:center;">
-          <img src="/logo1.jpg" alt="Logo" style="max-height: 60px; border-radius:6px;">
+        <div class="sidebar-brand" style="display:flex; justify-content:center; padding: 2rem 0;">
+          <img src="/logo2.png" alt="Logo" style="max-height: 120px; width: auto; visibility: hidden;" onload="window.makeTransparent(this)">
         </div>
         
         <ul class="nav-menu">
@@ -468,6 +559,14 @@ async function renderApp() {
             <i class="ph ph-storefront"></i>
             <span>Şube Yönetimi</span>
           </a>
+          <a href="#" class="nav-item ${currentView === 'branch_ops' ? 'active' : ''}" data-view="branch_ops">
+            <i class="ph ph-sliders"></i>
+            <span>Şube Operasyonları</span>
+          </a>
+          <a href="#" class="nav-item ${currentView === 'settings' ? 'active' : ''}" data-view="settings">
+            <i class="ph ph-gear"></i>
+            <span>Ayarlar</span>
+          </a>
           ` : ''}
           <a href="#" class="nav-item" id="logoutBtn" style="margin-top: 1rem; color: #F44336;">
             <i class="ph ph-sign-out"></i>
@@ -475,14 +574,9 @@ async function renderApp() {
           </a>
         </ul>
         
-        <div class="user-profile">
-          <div class="user-avatar">
-            ${currentUser.name.charAt(0)}
-          </div>
-          <div class="user-info">
-            <h4>${currentUser.name}</h4>
-            <p>${currentUser.role === 'admin' ? 'Sistem Yöneticisi' : 'Şube Yöneticisi'}</p>
-          </div>
+        <div class="user-profile" style="flex-direction: column; align-items: flex-start; gap: 0.3rem; background: transparent; border-top: 1px solid var(--color-border); border-radius: 0; padding: 1.5rem 0.5rem;">
+          <div style="font-weight: 700; color: var(--color-secondary); font-size: 0.9rem; letter-spacing: 0.5px; white-space: nowrap;">GÜNTAŞ AUDIO SYSTEM</div>
+          <div style="font-size: 0.7rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">Sistem Kurumsal Sürüm</div>
         </div>
       </aside>
 
@@ -513,8 +607,12 @@ async function renderApp() {
   
   try {
     if (currentView === 'dashboard') {
-      currentPlaylistData = await api.fetchPlaylist();
-      mainContent.innerHTML = getDashboardHTML(currentPlaylistData);
+      const [playlist, branches] = await Promise.all([
+        api.fetchPlaylist(),
+        api.fetchBranches()
+      ]);
+      currentPlaylistData = playlist;
+      mainContent.innerHTML = getDashboardHTML(playlist, branches);
     } else if (currentView === 'music') {
       currentPlaylistData = await api.fetchPlaylist();
       mainContent.innerHTML = getMusicHTML(currentPlaylistData);
@@ -524,6 +622,11 @@ async function renderApp() {
     } else if (currentView === 'branches' && currentUser.role === 'admin') {
       const branches = await api.fetchBranches();
       mainContent.innerHTML = getBranchesHTML(branches);
+    } else if (currentView === 'branch_ops' && currentUser.role === 'admin') {
+      const branches = await api.fetchBranches();
+      mainContent.innerHTML = getBranchOpsHTML(branches);
+    } else if (currentView === 'settings' && currentUser.role === 'admin') {
+      mainContent.innerHTML = getSettingsHTML();
     }
   } catch (error) {
     mainContent.innerHTML = `<div class="glass-panel" style="padding: 2rem; text-align:center; color: #F44336;"><i class="ph ph-warning" style="font-size: 3rem;"></i><br>Veri yüklenirken hata oluştu: ${error.message}</div>`;
@@ -535,6 +638,63 @@ async function renderApp() {
 }
 
 // ================= VIEW TEMPLATES =================
+
+// BRANCH OPS HELPERS
+window.selectedBranchId = null;
+window.handleBranchSelect = async (id) => {
+  window.selectedBranchId = id;
+  const mainContent = document.getElementById('mainContent');
+  const branches = await api.fetchBranches();
+  mainContent.innerHTML = getBranchOpsHTML(branches);
+};
+
+window.addBranchSongForm = async (e) => {
+  e.preventDefault();
+  if (!window.selectedBranchId) return showToast('Lütfen önce bir şube seçin!', 'error');
+  
+  const fileInput = document.getElementById('newBranchSongFile');
+  const file = fileInput.files[0];
+  if (!file) return showToast('Dosya seçin!', 'error');
+
+  try {
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Yükleniyor...';
+    
+    const fileUrl = await api.uploadMusicFile(file);
+    await api.addSong({ name: file.name.replace(/\.[^/.]+$/, ""), file_path: fileUrl }, window.selectedBranchId);
+    
+    showToast('Şubeye özel müzik eklendi.', 'success');
+    window.handleBranchSelect(window.selectedBranchId);
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+    e.target.querySelector('button').disabled = false;
+  }
+};
+
+window.addBranchCampaignForm = async (e) => {
+  e.preventDefault();
+  if (!window.selectedBranchId) return showToast('Lütfen önce bir şube seçin!', 'error');
+
+  const name = document.getElementById('newBranchCampName').value;
+  const freq = document.getElementById('newBranchCampFreq').value;
+  const fileInput = document.getElementById('newBranchCampFile');
+  const file = fileInput.files[0];
+  if (!file) return showToast('Dosya seçin!', 'error');
+
+  try {
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    
+    const fileUrl = await api.uploadCampaignFile(file);
+    await api.addCampaign({ name, frequency: freq, file_path: fileUrl }, window.selectedBranchId);
+    
+    showToast('Şubeye özel kampanya eklendi.', 'success');
+    window.handleBranchSelect(window.selectedBranchId);
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+};
 
 function getBranchPlayerHTML(playlist) {
   const currentSong = playlist && playlist.length > 0 ? playlist[window.radio.currentIndex || 0].name : 'Hazır Bekliyor';
@@ -551,7 +711,7 @@ function getBranchPlayerHTML(playlist) {
       
       <!-- Top Bar -->
       <div style="padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <img src="/logo1.jpg" alt="Güntaş" style="height: 60px; border-radius: 4px;">
+        <img src="/logo2.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
         <div style="display:flex; align-items:center; gap: 1rem;">
           <div style="display:flex; align-items:center; gap: 0.5rem; color: ${isOffline ? '#F44336' : '#4CAF50'};">
             <i class="ph ${isOffline ? 'ph-wifi-slash' : 'ph-wifi-high'}"></i>
@@ -613,14 +773,53 @@ function getBranchPlayerHTML(playlist) {
   `;
 }
 
-function getDashboardHTML(playlist) {
+function getDashboardHTML(playlist, branches = []) {
   const nextSong = (playlist && playlist.length > 0) ? playlist[0].name : 'Sırada bekleyen parça yok';
+
+  const branchStatusRows = branches.map(b => `
+    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" class="table-row-hover">
+      <td style="padding: 1rem;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(0, 229, 255, 0.1); display:flex; align-items:center; justify-content:center; color: var(--color-secondary);">
+            <i class="ph ph-storefront"></i>
+          </div>
+          <div>
+            <div style="font-weight:600;">${b.name}</div>
+            <div style="font-size:0.75rem; color:var(--color-text-muted);">ID: ${b.id}</div>
+          </div>
+        </div>
+      </td>
+      <td style="padding: 1rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem; color: ${b.status === 'online' ? '#4CAF50' : '#F44336'}; font-size: 0.9rem; font-weight: 500;">
+          <div style="width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor;"></div>
+          ${b.status === 'online' ? 'Çevrimiçi' : 'Çevrimdışı'}
+        </div>
+      </td>
+      <td style="padding: 1rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <i class="ph ph-music-note text-teal" style="font-size: 1.1rem;"></i>
+          <span style="font-size: 0.9rem;">${b.music || 'Güntaş Radyo'}</span>
+        </div>
+      </td>
+      <td style="padding: 1rem;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <div style="flex:1; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; position:relative;">
+            <div style="position:absolute; left:0; top:0; bottom:0; width:${b.volume || 50}%; background: var(--color-secondary); border-radius:2px; box-shadow: 0 0 10px var(--color-secondary);"></div>
+          </div>
+          <span style="font-size: 0.85rem; min-width: 30px;">%${b.volume || 50}</span>
+        </div>
+      </td>
+      <td style="padding: 1rem; text-align:right;">
+        <span style="font-size:0.8rem; color:var(--color-text-muted);">${b.sync || '-'}</span>
+      </td>
+    </tr>
+  `).join('');
 
   return `
     <header class="top-header fade-in-up">
       <div>
-        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;">Hoşgeldiniz, ${currentUser.name}</h1>
-        <p class="text-muted">Güntaş Müzik ve Kampanya Yönetim Portalı</p>
+        <h1 style="font-size: 2.2rem; margin-bottom: 0.2rem; color: var(--color-secondary); text-transform: uppercase; letter-spacing: 1px;">Hoşgeldiniz, Admin</h1>
+        <p style="color: var(--color-secondary); opacity: 0.8; font-weight: 500; font-size: 1.1rem;">Güntaş Audio System Müzik ve Kampanya Yönetim Portalı</p>
       </div>
       <div class="status-badge" style="border-color: ${isOffline ? '#F44336' : 'rgba(0, 229, 255, 0.2)'}; color: ${isOffline ? '#F44336' : 'var(--color-secondary)'}; background: ${isOffline ? 'rgba(244, 67, 54, 0.1)' : 'rgba(0, 229, 255, 0.1)'}">
         <div class="status-dot" style="background: ${isOffline ? '#F44336' : 'var(--color-secondary)'}; box-shadow: 0 0 8px ${isOffline ? '#F44336' : 'var(--color-secondary)'}; animation: ${isOffline ? 'none' : 'pulse 2s infinite'}"></div>
@@ -628,40 +827,71 @@ function getDashboardHTML(playlist) {
       </div>
     </header>
     
-    <div class="grid-cards fade-in-up" style="animation-delay: 0.1s; margin-top: 2rem;">
+    <div class="grid-cards fade-in-up" style="animation-delay: 0.1s; margin-top: 2rem; grid-template-columns: 1fr 1fr;">
       <!-- Music Card -->
       <div class="glass-panel dashboard-card hover-lift">
         <div class="card-header">
-          <div class="card-title"><i class="ph ph-speaker-hifi text-teal"></i> Şu An Çalan</div>
+          <div class="card-title"><i class="ph ph-speaker-hifi text-teal"></i> Yayın Merkezi Durumu</div>
           <span style="font-size: 0.8rem; background: rgba(255,255,255,0.1); padding: 0.2rem 0.6rem; border-radius: 12px;">${isOffline ? 'Offline Hafıza' : 'Canlı Akış'}</span>
         </div>
-        <div style="text-align: center; padding: 1rem 0;">
-          <div class="music-disc" style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); margin: 0 auto 1rem auto; display: flex; align-items: center; justify-content: center;">
-            <i class="ph ph-music-note" style="font-size: 2.5rem; color: #fff;"></i>
+        <div style="display:flex; align-items:center; gap: 2rem; padding: 1.5rem;">
+          <div class="music-disc" style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <i class="ph ph-broadcast" style="font-size: 2.5rem; color: #fff;"></i>
           </div>
-          <h3>${isOffline ? 'Çevrimdışı Mod Müzikleri' : 'Güntaş Müzik Akışı'}</h3>
-          <p class="text-muted" style="margin-top: 0.5rem;">Sıradaki: <span id="nowPlayingTitle">${isOffline ? 'Önbellekten devam ediliyor...' : nextSong}</span></p>
+          <div>
+            <h3 style="margin-bottom: 0.5rem; color: var(--color-secondary);">Güntaş Audio Radyo</h3>
+            <p class="text-muted" style="font-size: 0.9rem;">Yayın Akışı: <span id="nowPlayingTitle" style="color: #fff;">${isOffline ? 'Önbellekten devam ediliyor...' : nextSong}</span></p>
+            <div style="margin-top: 1rem; display:flex; gap:0.5rem;">
+               <span class="badge" style="background: rgba(76, 175, 80, 0.1); color: #4CAF50; border: 1px solid rgba(76, 175, 80, 0.2);">YAYINDA</span>
+               <span class="badge" style="background: rgba(0, 229, 255, 0.1); color: var(--color-secondary); border: 1px solid rgba(0, 229, 255, 0.2);">HD SES</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- System Status -->
+      <!-- Quick Stats -->
       <div class="glass-panel dashboard-card hover-lift">
         <div class="card-header">
-          <div class="card-title"><i class="ph ph-cpu text-teal"></i> Cihaz Durumu</div>
+          <div class="card-title"><i class="ph ph-chart-bar text-teal"></i> Şube İstatistikleri</div>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 0.5rem;">
-          <div style="display: flex; justify-content: space-between;"><span class="text-muted">Bağlantı:</span>
-            ${isOffline 
-              ? '<span style="color: #F44336;"><i class="ph ph-wifi-slash"></i> Yok</span>' 
-              : '<span style="color: #4CAF50;"><i class="ph ph-wifi-high"></i> Çevrimiçi</span>'
-            }
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem;">
+          <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 2.5rem; font-weight: 700; color: var(--color-secondary);">${branches.length}</div>
+            <div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">Toplam Şube</div>
           </div>
-          <div style="display: flex; justify-content: space-between;"><span class="text-muted">Senkronizasyon:</span><span>${isOffline ? 'Bilinmiyor' : 'Az önce'}</span></div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="text-muted">Ses Seviyesi:</span>
-            <span>%75</span>
+          <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 2.5rem; font-weight: 700; color: #4CAF50;">${branches.filter(b => b.status === 'online').length}</div>
+            <div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">Çevrimiçi</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Branch Status Table -->
+    <div class="glass-panel fade-in-up" style="margin-top: 2rem; padding: 1.5rem; animation-delay: 0.2s;">
+      <div class="card-header" style="margin-bottom: 1.5rem;">
+        <div class="card-title" style="font-size: 1.3rem;"><i class="ph ph-list-checks text-teal"></i> Şube Canlı Durum Paneli</div>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: rgba(0, 229, 255, 0.1); color: var(--color-secondary); border: 1px solid rgba(0, 229, 255, 0.2);" onclick="renderApp()">
+            <i class="ph ph-arrows-clockwise"></i> Yenile
+          </button>
+        </div>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="color: var(--color-text-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--color-border);">
+              <th style="padding: 1rem;">Şube Bilgisi</th>
+              <th style="padding: 1rem;">Durum</th>
+              <th style="padding: 1rem;">Yayın Akışı (Dosya)</th>
+              <th style="padding: 1rem;">Ses Seviyesi</th>
+              <th style="padding: 1rem; text-align:right;">Son Senkron</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${branchStatusRows.length > 0 ? branchStatusRows : '<tr><td colspan="5" style="padding: 2rem; text-align:center; color:var(--color-text-muted);">Kayıtlı şube bulunamadı.</td></tr>'}
+          </tbody>
+        </table>
       </div>
     </div>
   `;
@@ -869,6 +1099,173 @@ function getBranchesHTML(branches) {
         </form>
       </div>
     </div>
+  `;
+}
+
+function getSettingsHTML() {
+  return `
+    <header class="top-header fade-in-up">
+      <div>
+        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;">Ayarlar</h1>
+        <p class="text-muted">Sistem ve güvenlik ayarlarını yönetin</p>
+      </div>
+    </header>
+    
+    <div class="grid-cards fade-in-up" style="animation-delay: 0.1s; margin-top: 2rem;">
+      <div class="glass-panel dashboard-card">
+        <div class="card-header">
+          <div class="card-title"><i class="ph ph-lock text-teal"></i> Admin Şifresini Değiştir</div>
+        </div>
+        <form onsubmit="window.updatePasswordForm(event)" style="margin-top: 1.5rem;">
+          <div class="input-group">
+            <label for="newAdminPass">Yeni Şifre</label>
+            <input type="password" id="newAdminPass" class="input-field" placeholder="••••••••" required>
+          </div>
+          <div class="input-group" style="margin-top: 1rem;">
+            <label for="confirmAdminPass">Yeni Şifre (Tekrar)</label>
+            <input type="password" id="confirmAdminPass" class="input-field" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn btn-teal btn-block" style="margin-top: 1.5rem;">
+            <i class="ph ph-check"></i> Şifreyi Güncelle
+          </button>
+        </form>
+        <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--color-text-muted);">
+          <i class="ph ph-info"></i> Şifre değişikliği hemen aktif olacaktır. Bir sonraki girişte yeni şifrenizi kullanmanız gerekecektir.
+        </p>
+      </div>
+
+      <div class="glass-panel dashboard-card">
+        <div class="card-header">
+          <div class="card-title"><i class="ph ph-info text-teal"></i> Sistem Bilgisi</div>
+        </div>
+        <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem;">
+          <div style="display: flex; justify-content: space-between;">
+            <span class="text-muted">Versiyon:</span>
+            <span>v2.1.0-stable</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span class="text-muted">Supabase Durumu:</span>
+            <span style="color: #4CAF50;">Bağlı</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span class="text-muted">Son Yedekleme:</span>
+            <span>Bugün 04:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getBranchOpsHTML(branches) {
+  const selectedBranch = branches.find(b => b.id === window.selectedBranchId);
+  
+  return `
+    <header class="top-header fade-in-up">
+      <div>
+        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;">Şube Operasyonları</h1>
+        <p class="text-muted">Şubeye özel müzik ve kampanya akışlarını yönetin</p>
+      </div>
+    </header>
+
+    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-bottom: 2rem;">
+      <label style="display:block; margin-bottom: 0.5rem; color: var(--color-secondary);">İşlem Yapılacak Şubeyi Seçin</label>
+      <select class="input-field" onchange="window.handleBranchSelect(this.value)" style="max-width: 400px; background: rgba(0,0,0,0.3);">
+        <option value="">--- Şube Seçin ---</option>
+        ${branches.map(b => `<option value="${b.id}" ${b.id === window.selectedBranchId ? 'selected' : ''}>${b.name} (${b.id})</option>`).join('')}
+      </select>
+    </div>
+
+    ${window.selectedBranchId ? `
+    <div class="grid-cards fade-in-up" style="grid-template-columns: 1fr 1fr; animation-delay: 0.1s;">
+      
+      <!-- Branch Specific Music -->
+      <div class="glass-panel dashboard-card">
+        <div class="card-header">
+          <div class="card-title"><i class="ph ph-music-notes text-teal"></i> ${selectedBranch.name} Özel Müzik Listesi</div>
+        </div>
+        <div style="margin-top: 1rem;">
+           <form onsubmit="window.addBranchSongForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+             <div class="input-group">
+               <label>Yeni Şarkı Ekle</label>
+               <input type="file" id="newBranchSongFile" class="input-field" accept="audio/*" required>
+             </div>
+             <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Ekle</button>
+           </form>
+           
+           <div id="branchPlaylistArea">
+              <p class="text-muted" style="font-size: 0.85rem; text-align:center; padding: 1rem;">Müzik listesi yükleniyor...</p>
+           </div>
+        </div>
+      </div>
+
+      <!-- Branch Specific Campaigns -->
+      <div class="glass-panel dashboard-card">
+        <div class="card-header">
+          <div class="card-title"><i class="ph ph-megaphone text-teal"></i> ${selectedBranch.name} Özel Kampanyalar</div>
+        </div>
+        <div style="margin-top: 1rem;">
+           <form onsubmit="window.addBranchCampaignForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+             <div class="input-group">
+               <label>Kampanya Adı</label>
+               <input type="text" id="newBranchCampName" class="input-field" required>
+             </div>
+             <div class="input-group">
+               <label>Sıklık</label>
+               <select id="newBranchCampFreq" class="input-field" style="background: var(--color-dark);">
+                 <option value="15 Dakikada Bir">15 Dakikada Bir</option>
+                 <option value="30 Dakikada Bir">30 Dakikada Bir</option>
+                 <option value="1 Saatte Bir">1 Saatte Bir</option>
+               </select>
+             </div>
+             <div class="input-group">
+               <label>Ses Dosyası</label>
+               <input type="file" id="newBranchCampFile" class="input-field" accept="audio/*" required>
+             </div>
+             <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Kampanya Ekle</button>
+           </form>
+
+           <div id="branchCampaignArea">
+              <p class="text-muted" style="font-size: 0.85rem; text-align:center; padding: 1rem;">Kampanyalar yükleniyor...</p>
+           </div>
+        </div>
+      </div>
+
+    </div>
+    <script>
+      (async () => {
+        try {
+          const playlist = await api.fetchPlaylist('${window.selectedBranchId}');
+          const campaigns = await api.fetchCampaigns('${window.selectedBranchId}');
+          
+          const pArea = document.getElementById('branchPlaylistArea');
+          const cArea = document.getElementById('branchCampaignArea');
+          
+          if(pArea) pArea.innerHTML = playlist.length > 0 ? playlist.map(m => \`
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.6rem; border-radius:6px; margin-bottom:0.4rem;">
+              <span style="font-size:0.9rem;">\${m.name}</span>
+              <button class="btn" style="padding:0.2rem; color:#F44336;" onclick="window.deleteSong('\${m.id}')"><i class="ph ph-trash"></i></button>
+            </div>
+          \`).join('') : '<p class="text-muted">Özel şarkı yok.</p>';
+
+          if(cArea) cArea.innerHTML = campaigns.length > 0 ? campaigns.map(c => \`
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.6rem; border-radius:6px; margin-bottom:0.4rem;">
+              <div>
+                <div style="font-size:0.9rem; font-weight:600;">\${c.name}</div>
+                <div style="font-size:0.75rem; color:var(--color-text-muted);">\${c.frequency}</div>
+              </div>
+              <button class="btn" style="padding:0.2rem; color:#F44336;" onclick="window.deleteCampaign('\${c.id}')"><i class="ph ph-trash"></i></button>
+            </div>
+          \`).join('') : '<p class="text-muted">Özel kampanya yok.</p>';
+        } catch(e) { console.error(e); }
+      })();
+    </script>
+    ` : `
+    <div class="glass-panel" style="padding: 3rem; text-align:center; color: var(--color-text-muted);">
+      <i class="ph ph-arrow-up" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+      <p>Lütfen işlem yapmak istediğiniz şubeyi yukarıdaki listeden seçin.</p>
+    </div>
+    `}
   `;
 }
 

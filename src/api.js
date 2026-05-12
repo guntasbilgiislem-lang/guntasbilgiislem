@@ -28,10 +28,33 @@ class ApiService {
        throw new Error('Geçersiz karakterler veya boş alan.');
     }
 
-    if (username === 'admin' && password === 'admin') {
-      const user = { id: 'admin', name: 'Merkez Yönetim', role: 'admin' };
-      this.setToken('mock_jwt_admin_' + Date.now(), user);
-      return user;
+    // Admin girişi (Branches tablosundaki 'admin' ID'li satırı kontrol et)
+    if (username === 'admin') {
+      try {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('*')
+          .eq('id', 'admin')
+          .eq('password', password)
+          .maybeSingle();
+        
+        if (!error && data) {
+          const user = { id: 'admin', name: 'Admin', role: 'admin' };
+          this.setToken('mock_jwt_admin_' + Date.now(), user);
+          return user;
+        }
+      } catch (e) {
+        console.warn('Admin kaydı sorgulanamadı, fallback kullanılıyor.');
+      }
+
+      // Fallback (eğer tablo yoksa veya henüz şifre değişmemişse)
+      if (password === 'admin') {
+        const user = { id: 'admin', name: 'Admin', role: 'admin' };
+        this.setToken('mock_jwt_admin_' + Date.now(), user);
+        return user;
+      }
+      
+      throw new Error('Hatalı admin şifresi.');
     }
 
     // Supabase'den şubeyi sorgula
@@ -51,14 +74,37 @@ class ApiService {
     return user;
   }
 
+  async updateAdminPassword(newPassword) {
+    // Admin bilgisini branches tablosunda sakla
+    const { error } = await supabase
+      .from('branches')
+      .upsert({ 
+        id: 'admin', 
+        password: newPassword, 
+        name: 'Admin',
+        status: 'online',
+        music: 'Sistem',
+        sync: 'Aktif'
+      });
+    
+    if (error) throw new Error('Şifre güncellenemedi: ' + error.message);
+  }
+
   // --- BRANCHES ---
   async fetchBranches() {
-    const { data, error } = await supabase.from('branches').select('*').order('id', { ascending: true });
+    // Admin satırını gizle
+    const { data, error } = await supabase
+      .from('branches')
+      .select('*')
+      .neq('id', 'admin')
+      .order('id', { ascending: true });
     if (error) throw new Error('Şubeler getirilemedi: ' + error.message);
     return data;
   }
 
   async addBranch(branch) {
+    if (branch.id === 'admin') throw new Error('Bu kullanıcı adı sistem tarafından ayrılmıştır.');
+
     const { error } = await supabase.from('branches').insert([{
       id: branch.id,
       name: branch.name,
@@ -87,19 +133,38 @@ class ApiService {
   }
 
   // --- CAMPAIGNS ---
-  async fetchCampaigns() {
-    const { data, error } = await supabase.from('campaigns').select('*');
-    if (error) throw new Error('Kampanyalar getirilemedi: ' + error.message);
-    return data;
+  async fetchCampaigns(branchId = null) {
+    try {
+      let query = supabase.from('campaigns').select('*');
+      if (branchId) {
+        query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
+      } else {
+        query = query.is('branch_id', null);
+      }
+      const { data, error } = await query;
+      
+      // If column doesn't exist, fallback to global
+      if (error && error.message.includes('branch_id')) {
+        const globalRes = await supabase.from('campaigns').select('*');
+        if (globalRes.error) throw globalRes.error;
+        return globalRes.data;
+      }
+      
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      throw new Error('Kampanyalar getirilemedi: ' + err.message);
+    }
   }
 
-  async addCampaign(campaign) {
+  async addCampaign(campaign, branchId = null) {
     const { error } = await supabase.from('campaigns').insert([{
       id: 'c' + Date.now(),
       name: campaign.name,
       frequency: campaign.frequency,
       status: 'active',
-      file_path: campaign.file_path
+      file_path: campaign.file_path,
+      branch_id: branchId
     }]);
     if (error) throw new Error('Kampanya eklenemedi: ' + error.message);
   }
@@ -110,23 +175,35 @@ class ApiService {
   }
 
   // --- PLAYLIST (MUSIC) ---
-  async fetchPlaylist() {
-    let { data, error } = await supabase.from('playlist').select('*').order('order_index', { ascending: true });
-    
-    // Eğer herhangi bir sebepten (sütun olmaması vs.) hata verirse, sırasız çekmeyi dene.
-    if (error) {
-      const res = await supabase.from('playlist').select('*');
-      data = res.data;
-      error = res.error;
+  async fetchPlaylist(branchId = null) {
+    try {
+      let query = supabase.from('playlist').select('*');
+      
+      if (branchId) {
+        query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
+      } else {
+        query = query.is('branch_id', null);
+      }
+
+      let { data, error } = await query.order('order_index', { ascending: true });
+      
+      // Handle missing branch_id column or order_index error
+      if (error && (error.message.includes('branch_id') || error.message.includes('order_index'))) {
+        const globalRes = await supabase.from('playlist').select('*');
+        if (globalRes.error) throw globalRes.error;
+        return globalRes.data || [];
+      }
+      
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      throw new Error('Müzik listesi getirilemedi: ' + err.message);
     }
-    
-    if (error) throw new Error('Müzik listesi getirilemedi: ' + error.message);
-    return data || [];
   }
 
-  async addSong(song) {
-    // Determine max order_index
-    const playlist = await this.fetchPlaylist();
+  async addSong(song, branchId = null) {
+    // Determine max order_index for this branch/global
+    const playlist = await this.fetchPlaylist(branchId);
     const maxOrder = playlist.length > 0 ? Math.max(...playlist.map(p => p.order_index || 0)) : 0;
 
     const { error } = await supabase.from('playlist').insert([{
@@ -134,7 +211,8 @@ class ApiService {
       name: song.name,
       duration: song.duration || 'Bilinmiyor',
       file_path: song.file_path,
-      order_index: maxOrder + 1
+      order_index: maxOrder + 1,
+      branch_id: branchId
     }]);
     if (error) throw new Error('Şarkı eklenemedi: ' + error.message);
   }
