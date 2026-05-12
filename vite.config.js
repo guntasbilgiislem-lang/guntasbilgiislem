@@ -7,22 +7,24 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Güntaş Şube Paneli',
-        short_name: 'Güntaş Panel',
-        description: 'Güntaş Şube Müzik ve Kampanya Yönetim Portalı',
+        name: 'Guntas Audio System',
+        short_name: 'GuntasFm',
+        description: 'Güntaş Audio System Müzik ve Kampanya Yönetim Portalı',
         theme_color: '#002B5B',
         background_color: '#07101A',
         display: 'standalone',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'app-icon.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'app-icon.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },
