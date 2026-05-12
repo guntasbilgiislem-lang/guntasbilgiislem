@@ -64,25 +64,37 @@ window.makeTransparent = (img) => {
     const width = canvas.width;
     const height = canvas.height;
     
-    const corners = [0, (width - 1) * 4, ((height - 1) * width) * 4, ((height * width) - 1) * 4];
-    const targetR = data[corners[0]], targetG = data[corners[0]+1], targetB = data[corners[0]+2];
+    // Sample all 4 corners to find the background color
+    const cornerIndices = [0, (width - 1) * 4, ((height - 1) * width) * 4, ((height * width) - 1) * 4];
+    const targetR = data[cornerIndices[0]], targetG = data[cornerIndices[0]+1], targetB = data[cornerIndices[0]+2];
     
-    // For the horizontal logo (logo2), we want to remove ALL pixels of the background color (including internal holes)
-    // For the circular PWA icon (app-icon), we only want to remove CONNECTED pixels to keep the white 'g' intact.
     const isMainLogo = img.src.includes('logo2.png');
     
     if (isMainLogo) {
-      // Global color replacement
+      // For logo2.png: remove all pixels matching ANY corner color (handles all 4 edges of the blue background)
+      // Also hardcode the known blue range as a fallback (logo2 blue is approximately R:0-30, G:40-90, B:150-220)
       for (let i = 0; i < data.length; i += 4) {
-        const dr = Math.abs(data[i] - targetR);
-        const dg = Math.abs(data[i+1] - targetG);
-        const db = Math.abs(data[i+2] - targetB);
-        if (dr < 60 && dg < 60 && db < 60) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        // Check against sampled corner color with high tolerance
+        const dr = Math.abs(r - targetR);
+        const dg = Math.abs(g - targetG);
+        const db = Math.abs(b - targetB);
+        const matchesCorner = dr < 80 && dg < 80 && db < 80;
+        // Also check each of the 4 corners independently
+        let matchesAnyCorner = matchesCorner;
+        for (const ci of cornerIndices) {
+          const cr = data[ci], cg = data[ci+1], cb = data[ci+2];
+          if (Math.abs(r-cr) < 80 && Math.abs(g-cg) < 80 && Math.abs(b-cb) < 80) {
+            matchesAnyCorner = true;
+            break;
+          }
+        }
+        if (matchesAnyCorner) {
           data[i+3] = 0;
         }
       }
     } else {
-      // Flood fill (connected areas only)
+      // Flood fill (connected areas only) for circular PWA icon
       const visited = new Uint8Array(width * height);
       const stack = [0, width - 1, (height - 1) * width, height * width - 1];
       while (stack.length > 0) {
