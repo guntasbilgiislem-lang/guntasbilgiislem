@@ -48,29 +48,104 @@ window.showToast = (message, type = 'info') => {
   }, 4000);
 };
 
-// LOGO BACKGROUND REMOVER (CHROMA KEY)
+// LOGO BACKGROUND REMOVER (ROBUST FLOOD FILL)
 window.makeTransparent = (img) => {
-  if (img.dataset.processed) return;
+  if (img.dataset.processed || !img.complete || img.naturalWidth === 0) return;
+  
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   ctx.drawImage(img, 0, 0);
+  
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
+  const width = canvas.width;
+  const height = canvas.height;
   
-  // Use the top-left pixel as target color
-  const r = data[0], g = data[1], b = data[2];
-  for (let i = 0; i < data.length; i += 4) {
-    const dr = Math.abs(data[i] - r);
-    const dg = Math.abs(data[i+1] - g);
-    const db = Math.abs(data[i+2] - b);
-    if (dr < 40 && dg < 40 && db < 40) data[i+3] = 0;
+  // Sample corners to find background color
+  const corners = [
+    (0), // Top-left
+    (width - 1) * 4, // Top-right
+    ((height - 1) * width) * 4, // Bottom-left
+    ((height * width) - 1) * 4 // Bottom-right
+  ];
+  
+  // Use first corner as target
+  const targetR = data[corners[0]], targetG = data[corners[0]+1], targetB = data[corners[0]+2];
+  
+  const visited = new Uint8Array(width * height);
+  const stack = [0, width - 1, (height - 1) * width, height * width - 1];
+  
+  while (stack.length > 0) {
+    const idx = stack.pop();
+    if (visited[idx]) continue;
+    visited[idx] = 1;
+    
+    const pIdx = idx * 4;
+    const dr = Math.abs(data[pIdx] - targetR);
+    const dg = Math.abs(data[pIdx+1] - targetG);
+    const db = Math.abs(data[pIdx+2] - targetB);
+    
+    // If it's a "background" pixel, make it transparent and check neighbors
+    if (dr < 50 && dg < 50 && db < 50) {
+      data[pIdx+3] = 0;
+      
+      const x = idx % width;
+      const y = Math.floor(idx / width);
+      
+      if (x > 0) stack.push(idx - 1);
+      if (x < width - 1) stack.push(idx + 1);
+      if (y > 0) stack.push(idx - width);
+      if (y < height - 1) stack.push(idx + width);
+    }
   }
+  
   ctx.putImageData(imageData, 0, 0);
   img.src = canvas.toDataURL();
   img.dataset.processed = "true";
   img.style.visibility = 'visible';
+};
+
+window.fixFavicon = (src) => {
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const width = canvas.width;
+    const height = canvas.height;
+    const targetR = data[0], targetG = data[1], targetB = data[2];
+    const visited = new Uint8Array(width * height);
+    const stack = [0, width - 1, (height - 1) * width, height * width - 1];
+    while (stack.length > 0) {
+      const idx = stack.pop();
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+      const pIdx = idx * 4;
+      const dr = Math.abs(data[pIdx] - targetR);
+      const dg = Math.abs(data[pIdx+1] - targetG);
+      const db = Math.abs(data[pIdx+2] - targetB);
+      if (dr < 50 && dg < 50 && db < 50) {
+        data[pIdx+3] = 0;
+        const x = idx % width;
+        const y = Math.floor(idx / width);
+        if (x > 0) stack.push(idx - 1);
+        if (x < width - 1) stack.push(idx + 1);
+        if (y > 0) stack.push(idx - width);
+        if (y < height - 1) stack.push(idx + width);
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    const link = document.querySelector("link[rel*='icon']");
+    if (link) link.href = canvas.toDataURL();
+  };
+  img.src = src;
 };
 
 isOffline = !navigator.onLine;
@@ -90,7 +165,8 @@ window.addEventListener('offline', () => {
 });
 
 async function init() {
-  await offlineAudio.init();
+  window.fixFavicon('/app-icon.png');
+  const token = localStorage.getItem('auth_token');
   renderLogin();
 }
 
@@ -711,7 +787,7 @@ function getBranchPlayerHTML(playlist) {
       
       <!-- Top Bar -->
       <div style="padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <img src="/logo2.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
+        <img src="/app-icon.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
         <div style="display:flex; align-items:center; gap: 1rem;">
           <div style="display:flex; align-items:center; gap: 0.5rem; color: ${isOffline ? '#F44336' : '#4CAF50'};">
             <i class="ph ${isOffline ? 'ph-wifi-slash' : 'ph-wifi-high'}"></i>
