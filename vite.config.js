@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      includeAssets: ['app-icon.png', 'logo2.png'],
       manifest: {
         name: 'Guntas Audio System',
         short_name: 'GuntasFm',
@@ -17,14 +17,18 @@ export default defineConfig({
           {
             src: 'app-icon.png',
             sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any'
+            type: 'image/png'
+          },
+          {
+            src: 'app-icon.png',
+            sizes: '512x512',
+            type: 'image/png'
           },
           {
             src: 'app-icon.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'maskable'
+            purpose: 'any maskable'
           }
         ]
       },
