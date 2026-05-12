@@ -789,7 +789,7 @@ function getBranchPlayerHTML(playlist) {
       
       <!-- Top Bar -->
       <div style="padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <img src="/app-icon.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
+        <img src="/logo2.png" alt="Güntaş" style="height: 60px; visibility: hidden;" onload="window.makeTransparent(this)">
         <div style="display:flex; align-items:center; gap: 1rem;">
           <div style="display:flex; align-items:center; gap: 0.5rem; color: ${isOffline ? '#F44336' : '#4CAF50'};">
             <i class="ph ${isOffline ? 'ph-wifi-slash' : 'ph-wifi-high'}"></i>
