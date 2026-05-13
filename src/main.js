@@ -682,7 +682,23 @@ let currentPlaylistData = [];
 async function renderApp() {
   if (currentUser.role === 'branch') {
     try {
-      currentPlaylistData = await api.fetchPlaylist(currentUser.id);
+      const playlist = await api.fetchPlaylist(currentUser.id);
+      const campaigns = await api.fetchCampaigns(currentUser.id);
+
+      const combined = [];
+      const pList = [...playlist];
+      const cList = [...campaigns];
+      let ci = 0;
+      for (let i = 0; i < pList.length; i++) {
+        combined.push(pList[i]);
+        if (cList.length > 0 && ci < cList.length && (i + 1) % Math.max(1, Math.ceil(pList.length / (cList.length + 1))) === 0) {
+          combined.push(cList[ci]);
+          ci++;
+        }
+      }
+      while (ci < cList.length) { combined.push(cList[ci]); ci++; }
+
+      currentPlaylistData = combined;
       
       // PRELOAD THE FIRST SONG TO BYPASS AUTOPLAY RESTRICTIONS
       if (currentPlaylistData && currentPlaylistData.length > 0) {
