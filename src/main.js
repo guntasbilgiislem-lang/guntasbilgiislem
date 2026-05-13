@@ -526,12 +526,11 @@ window.deleteCampaign = async (id) => {
 window.addCampaignForm = async (e) => {
   e.preventDefault();
   const name = document.getElementById('newCampName').value;
-  const freq = document.getElementById('newCampFreq').value;
   const fileInput = document.getElementById('newCampFile');
   const file = fileInput.files[0];
 
   if (!file) {
-    showToast('Lütfen bir kampanya ses dosyası seçin!', 'info');
+    showToast('Lütfen bir anons ses dosyası seçin!', 'info');
     return;
   }
 
@@ -541,13 +540,13 @@ window.addCampaignForm = async (e) => {
     btn.disabled = true;
 
     const fileUrl = await api.uploadCampaignFile(file);
-    await api.addCampaign({ name, frequency: freq, file_path: fileUrl });
+    await api.addCampaign({ name, frequency: 'Akış Sırası', file_path: fileUrl });
     
-    showToast('Kampanya başarıyla eklendi.', 'success');
+    showToast('Anons başarıyla eklendi.', 'success');
     renderApp();
   } catch (e) {
     showToast('Hata: ' + e.message, 'error');
-    document.getElementById('addCampBtn').innerHTML = '<i class="ph ph-plus"></i> Kampanyayı Ekle';
+    document.getElementById('addCampBtn').innerHTML = '<i class="ph ph-plus"></i> Anons Ekle';
     document.getElementById('addCampBtn').disabled = false;
   }
 };
@@ -710,8 +709,8 @@ async function renderApp() {
             <span>Müzik Yönetimi</span>
           </a>
           <a href="#" class="nav-item ${currentView === 'campaigns' ? 'active' : ''}" data-view="campaigns">
-            <i class="ph ph-megaphone"></i>
-            <span>Kampanyalar</span>
+            <i class="ph ph-broadcast"></i>
+            <span>Anons Sistemi</span>
           </a>
           <a href="#" class="nav-item ${currentView === 'branches' ? 'active' : ''}" data-view="branches">
             <i class="ph ph-storefront"></i>
@@ -775,8 +774,8 @@ async function renderApp() {
       currentPlaylistData = await api.fetchPlaylist();
       mainContent.innerHTML = getMusicHTML(currentPlaylistData);
     } else if (currentView === 'campaigns') {
-      const campaigns = await api.fetchCampaigns();
-      mainContent.innerHTML = getCampaignsHTML(campaigns);
+      currentCampaignData = await api.fetchCampaigns();
+      mainContent.innerHTML = getCampaignsHTML(currentCampaignData);
     } else if (currentView === 'branches' && currentUser.role === 'admin') {
       const branches = await api.fetchBranches();
       mainContent.innerHTML = getBranchesHTML(branches);
@@ -797,14 +796,66 @@ async function renderApp() {
 
 // ================= VIEW TEMPLATES =================
 
+// CAMPAIGN REORDER (for general anons)
+let currentCampaignData = [];
+window.moveCampaign = async (id, direction) => {
+  const idx = currentCampaignData.findIndex(c => c.id === id);
+  if (idx < 0) return;
+  if (direction === 'up' && idx > 0) {
+    [currentCampaignData[idx], currentCampaignData[idx - 1]] = [currentCampaignData[idx - 1], currentCampaignData[idx]];
+  } else if (direction === 'down' && idx < currentCampaignData.length - 1) {
+    [currentCampaignData[idx], currentCampaignData[idx + 1]] = [currentCampaignData[idx + 1], currentCampaignData[idx]];
+  } else return;
+  const mainContent = document.getElementById('mainContent');
+  mainContent.innerHTML = getCampaignsHTML(currentCampaignData);
+};
+
 // BRANCH OPS HELPERS
 window.selectedBranchId = null;
+window.branchPlaylistData = [];
+window.branchCampaignData = [];
+
 window.handleBranchSelect = async (id) => {
   window.selectedBranchId = id;
   const mainContent = document.getElementById('mainContent');
   const branches = await api.fetchBranches();
+  if (id) {
+    try {
+      window.branchPlaylistData = await api.fetchPlaylist(id);
+      window.branchCampaignData = await api.fetchCampaigns(id);
+    } catch(e) {
+      window.branchPlaylistData = [];
+      window.branchCampaignData = [];
+    }
+  }
   mainContent.innerHTML = getBranchOpsHTML(branches);
 };
+
+window.moveBranchSong = async (id, direction) => {
+  const idx = window.branchPlaylistData.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  if (direction === 'up' && idx > 0) {
+    [window.branchPlaylistData[idx], window.branchPlaylistData[idx - 1]] = [window.branchPlaylistData[idx - 1], window.branchPlaylistData[idx]];
+  } else if (direction === 'down' && idx < window.branchPlaylistData.length - 1) {
+    [window.branchPlaylistData[idx], window.branchPlaylistData[idx + 1]] = [window.branchPlaylistData[idx + 1], window.branchPlaylistData[idx]];
+  } else return;
+  const branches = await api.fetchBranches();
+  document.getElementById('mainContent').innerHTML = getBranchOpsHTML(branches);
+  try { await api.reorderPlaylist(window.branchPlaylistData.map(s => s.id)); } catch(e) { showToast('Sıralama kaydedilemedi: ' + e.message, 'error'); }
+};
+
+window.moveBranchCampaign = async (id, direction) => {
+  const idx = window.branchCampaignData.findIndex(c => c.id === id);
+  if (idx < 0) return;
+  if (direction === 'up' && idx > 0) {
+    [window.branchCampaignData[idx], window.branchCampaignData[idx - 1]] = [window.branchCampaignData[idx - 1], window.branchCampaignData[idx]];
+  } else if (direction === 'down' && idx < window.branchCampaignData.length - 1) {
+    [window.branchCampaignData[idx], window.branchCampaignData[idx + 1]] = [window.branchCampaignData[idx + 1], window.branchCampaignData[idx]];
+  } else return;
+  const branches = await api.fetchBranches();
+  document.getElementById('mainContent').innerHTML = getBranchOpsHTML(branches);
+};
+
 
 window.addBranchSongForm = async (e) => {
   e.preventDefault();
@@ -835,7 +886,6 @@ window.addBranchCampaignForm = async (e) => {
   if (!window.selectedBranchId) return showToast('Lütfen önce bir şube seçin!', 'error');
 
   const name = document.getElementById('newBranchCampName').value;
-  const freq = document.getElementById('newBranchCampFreq').value;
   const fileInput = document.getElementById('newBranchCampFile');
   const file = fileInput.files[0];
   if (!file) return showToast('Dosya seçin!', 'error');
@@ -843,9 +893,10 @@ window.addBranchCampaignForm = async (e) => {
   try {
     const btn = e.target.querySelector('button');
     btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Yükleniyor...';
     
     const fileUrl = await api.uploadCampaignFile(file);
-    await api.addCampaign({ name, frequency: freq, file_path: fileUrl }, window.selectedBranchId);
+    await api.addCampaign({ name, frequency: 'Akış Sırası', file_path: fileUrl }, window.selectedBranchId);
     
     showToast('Şubeye özel kampanya eklendi.', 'success');
     window.handleBranchSelect(window.selectedBranchId);
@@ -1129,13 +1180,20 @@ function getMusicHTML(playlist) {
 }
 
 function getCampaignsHTML(campaigns) {
-  const campsHtml = campaigns.map(c => `
+  const campsHtml = campaigns.map((c, index) => `
     <li style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.8rem; border-radius:8px; margin-bottom: 0.5rem;">
-      <div>
-        <strong>${c.name}</strong> <span class="badge badge-online">Aktif</span><br>
-        <span class="text-muted" style="font-size:0.8rem;">
-          Sıklık: ${c.frequency} | ${c.file_path ? `<a href="${c.file_path}" target="_blank" style="color:var(--color-primary);">Dosyayı Gör</a>` : 'Sadece Metin'}
-        </span>
+      <div style="display:flex; align-items:center; gap: 1rem; flex: 1;">
+        <div style="display:flex; flex-direction:column; gap:0.2rem;">
+          <button class="btn" style="padding: 0.2rem; background: transparent; border:none; color: var(--color-text-muted);" onclick="window.moveCampaign('${c.id}', 'up')" ${index === 0 ? 'disabled' : ''}><i class="ph ph-caret-up"></i></button>
+          <button class="btn" style="padding: 0.2rem; background: transparent; border:none; color: var(--color-text-muted);" onclick="window.moveCampaign('${c.id}', 'down')" ${index === campaigns.length - 1 ? 'disabled' : ''}><i class="ph ph-caret-down"></i></button>
+        </div>
+        <div style="width: 28px; height: 28px; background: rgba(0, 229, 255, 0.15); border-radius: 6px; display:flex; align-items:center; justify-content:center; color: var(--color-secondary); font-weight: 700; font-size: 0.8rem; flex-shrink:0;">${index + 1}</div>
+        <div>
+          <strong>${c.name}</strong> <span class="badge" style="background: rgba(76, 175, 80, 0.15); color: #4CAF50; border: 1px solid rgba(76, 175, 80, 0.2); font-size: 0.7rem;">Aktif</span><br>
+          <span class="text-muted" style="font-size:0.8rem;">
+            ${c.file_path ? `<a href="${c.file_path}" target="_blank" style="color:var(--color-secondary);">Dosyayı Gör</a>` : 'Sadece Metin'}
+          </span>
+        </div>
       </div>
       <div style="display:flex; gap:0.5rem; align-items:center;">
         ${c.file_path ? `<button class="btn btn-primary" style="padding: 0.2rem 0.5rem; background: rgba(0, 229, 255, 0.2); border-color: rgba(0, 229, 255, 0.3); color: var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button>` : ''}
@@ -1147,41 +1205,45 @@ function getCampaignsHTML(campaigns) {
   return `
     <header class="top-header fade-in-up">
       <div>
-        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;">Kampanyalar</h1>
-        <p class="text-muted">Mağaza içi reklam seslerini yönetin</p>
+        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;"><i class="ph ph-broadcast text-teal" style="margin-right:0.5rem;"></i>E-Ticaret & Bilgilendirme Anons Sistemi</h1>
+        <p class="text-muted">Genel radyo akışı içerisine eklenecek e-ticaret kampanyaları ve bilgilendirme anonsu yönetimi</p>
       </div>
     </header>
 
+    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-bottom: 2rem; animation-delay: 0.05s; border-left: 4px solid var(--color-secondary);">
+      <div style="display:flex; align-items:flex-start; gap: 1rem;">
+        <i class="ph ph-info" style="font-size: 1.5rem; color: var(--color-secondary); flex-shrink:0; margin-top:2px;"></i>
+        <div>
+          <p style="font-size: 0.9rem; color: var(--color-text); margin-bottom: 0.3rem; font-weight: 600;">Akış Sırası Düzeni</p>
+          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Aşağıdaki anonslar genel radyo akışı içerisinde sırayla çalınır. Yukarı/aşağı okları ile çalma sırasını düzenleyebilirsiniz. Bu anonslar tüm şubelerde yayınlanır. Şubeye özel kampanyalar için "Şube Operasyonları" sayfasını kullanın.</p>
+        </div>
+      </div>
+    </div>
+
     <div class="grid-cards fade-in-up" style="animation-delay: 0.1s;">
       <div class="glass-panel dashboard-card">
-        <div class="card-header"><div class="card-title">Aktif Kampanyalar</div></div>
+        <div class="card-header"><div class="card-title"><i class="ph ph-list-numbers text-teal"></i> Anons Akış Sırası (${campaigns.length} anons)</div></div>
         <ul style="list-style:none; padding:0; margin-top:1rem; display:flex; flex-direction:column;">
-          ${campsHtml}
+          ${campsHtml || '<li style="text-align:center; padding: 2rem; color: var(--color-text-muted);"><i class="ph ph-speaker-none" style="font-size: 2rem; display:block; margin-bottom: 0.5rem;"></i>Henüz anons eklenmemiş</li>'}
         </ul>
       </div>
 
       <div class="glass-panel dashboard-card">
-        <div class="card-header"><div class="card-title">Yeni Kampanya Sesi Ekle</div></div>
+        <div class="card-header"><div class="card-title"><i class="ph ph-plus-circle text-teal"></i> Yeni Anons Ekle</div></div>
         <form onsubmit="window.addCampaignForm(event)" style="margin-top: 1rem;">
           <div class="input-group">
-            <label>Kampanya Adı</label>
-            <input type="text" id="newCampName" class="input-field" placeholder="Örn: Hafta Sonu İndirimi" required>
+            <label>Anons Adı</label>
+            <input type="text" id="newCampName" class="input-field" placeholder="Örn: E-Ticaret Kampanyası, Bilgilendirme Anonsu" required>
           </div>
           <div class="input-group">
-            <label>Yayın Sıklığı</label>
-            <select id="newCampFreq" class="input-field" style="background-color: var(--color-dark);" required>
-              <option value="15 Dakikada Bir">15 Dakikada Bir</option>
-              <option value="30 Dakikada Bir">30 Dakikada Bir</option>
-              <option value="1 Saatte Bir">1 Saatte Bir</option>
-              <option value="Manuel">Manuel (Tetiklemeli)</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label>Kampanya Ses Dosyası (MP3/WAV)</label>
+            <label>Anons Ses Dosyası (MP3/WAV)</label>
             <input type="file" id="newCampFile" class="input-field" accept="audio/*" required style="padding: 0.5rem;">
           </div>
-          <button type="submit" id="addCampBtn" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Kampanyayı Ekle</button>
+          <button type="submit" id="addCampBtn" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Anons Ekle</button>
         </form>
+        <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--color-text-muted);">
+          <i class="ph ph-info"></i> Eklenen anonslar akış sırasının sonuna eklenir. Sıralamayı sol panelden değiştirebilirsiniz.
+        </p>
       </div>
     </div>
   `;
@@ -1317,111 +1379,140 @@ function getSettingsHTML() {
 
 function getBranchOpsHTML(branches) {
   const selectedBranch = branches.find(b => b.id === window.selectedBranchId);
-  
+  const playlist = window.branchPlaylistData || [];
+  const campaigns = window.branchCampaignData || [];
+
+  const playlistHtml = playlist.map((m, i) => `
+    <div style="display:flex; align-items:center; gap: 0.75rem; background:rgba(0,0,0,0.2); padding:0.6rem 0.8rem; border-radius:8px; margin-bottom:0.4rem;">
+      <div style="display:flex; flex-direction:column; gap:0.15rem;">
+        <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveBranchSong('${m.id}','up')" ${i===0?'disabled':''}><i class="ph ph-caret-up"></i></button>
+        <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveBranchSong('${m.id}','down')" ${i===playlist.length-1?'disabled':''}><i class="ph ph-caret-down"></i></button>
+      </div>
+      <div style="width:24px; height:24px; background:rgba(0,229,255,0.15); border-radius:5px; display:flex; align-items:center; justify-content:center; color:var(--color-secondary); font-weight:700; font-size:0.75rem; flex-shrink:0;">${i+1}</div>
+      <div style="flex:1; font-size:0.9rem;">${m.name}</div>
+      <div style="display:flex; gap:0.3rem;">
+        ${m.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${m.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+        <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteSong('${m.id}')"><i class="ph ph-trash"></i></button>
+      </div>
+    </div>
+  `).join('');
+
+  const campaignHtml = campaigns.map((c, i) => `
+    <div style="display:flex; align-items:center; gap: 0.75rem; background:rgba(0,0,0,0.2); padding:0.6rem 0.8rem; border-radius:8px; margin-bottom:0.4rem;">
+      <div style="display:flex; flex-direction:column; gap:0.15rem;">
+        <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveBranchCampaign('${c.id}','up')" ${i===0?'disabled':''}><i class="ph ph-caret-up"></i></button>
+        <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveBranchCampaign('${c.id}','down')" ${i===campaigns.length-1?'disabled':''}><i class="ph ph-caret-down"></i></button>
+      </div>
+      <div style="width:24px; height:24px; background:rgba(255,152,0,0.2); border-radius:5px; display:flex; align-items:center; justify-content:center; color:#FF9800; font-weight:700; font-size:0.75rem; flex-shrink:0;">${i+1}</div>
+      <div style="flex:1;">
+        <div style="font-size:0.9rem; font-weight:600;">${c.name}</div>
+        ${c.file_path ? `<a href="${c.file_path}" target="_blank" style="font-size:0.75rem; color:var(--color-secondary);">Dosyayı Gör</a>` : ''}
+      </div>
+      <div style="display:flex; gap:0.3rem;">
+        ${c.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+        <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteCampaign('${c.id}')"><i class="ph ph-trash"></i></button>
+      </div>
+    </div>
+  `).join('');
+
   return `
     <header class="top-header fade-in-up">
       <div>
-        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;">Şube Operasyonları</h1>
-        <p class="text-muted">Şubeye özel müzik ve kampanya akışlarını yönetin</p>
+        <h1 style="font-size: 1.8rem; margin-bottom: 0.2rem;"><i class="ph ph-sliders text-teal" style="margin-right:0.5rem;"></i>Şube Operasyonları</h1>
+        <p class="text-muted">Şubeye özel müzik listesi ve kampanya akışlarını yönetin</p>
       </div>
     </header>
 
     <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-bottom: 2rem;">
-      <label style="display:block; margin-bottom: 0.5rem; color: var(--color-secondary);">İşlem Yapılacak Şubeyi Seçin</label>
-      <select class="input-field" onchange="window.handleBranchSelect(this.value)" style="max-width: 400px; background: rgba(0,0,0,0.3);">
-        <option value="">--- Şube Seçin ---</option>
-        ${branches.map(b => `<option value="${b.id}" ${b.id === window.selectedBranchId ? 'selected' : ''}>${b.name} (${b.id})</option>`).join('')}
-      </select>
+      <div style="display:flex; align-items:center; gap: 1rem; flex-wrap: wrap;">
+        <div style="flex:1; min-width: 250px;">
+          <label style="display:block; margin-bottom: 0.5rem; color: var(--color-secondary); font-weight: 600;"><i class="ph ph-storefront"></i> İşlem Yapılacak Şubeyi Seçin</label>
+          <select class="input-field" onchange="window.handleBranchSelect(this.value)" style="max-width: 400px; background: rgba(0,0,0,0.3);">
+            <option value="">--- Şube Seçin ---</option>
+            ${branches.map(b => `<option value="${b.id}" ${b.id === window.selectedBranchId ? 'selected' : ''}>${b.name} (${b.id})</option>`).join('')}
+          </select>
+        </div>
+        ${selectedBranch ? `
+        <div style="display:flex; gap: 1.5rem; align-items:center;">
+          <div style="text-align:center;">
+            <div style="font-size:1.5rem; font-weight:700; color:var(--color-secondary);">${playlist.length}</div>
+            <div style="font-size:0.7rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:1px;">Müzik</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.5rem; font-weight:700; color:#FF9800;">${campaigns.length}</div>
+            <div style="font-size:0.7rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:1px;">Kampanya</div>
+          </div>
+        </div>` : ''}
+      </div>
     </div>
 
-    ${window.selectedBranchId ? `
+    ${window.selectedBranchId && selectedBranch ? `
     <div class="grid-cards fade-in-up" style="grid-template-columns: 1fr 1fr; animation-delay: 0.1s;">
       
       <!-- Branch Specific Music -->
       <div class="glass-panel dashboard-card">
         <div class="card-header">
-          <div class="card-title"><i class="ph ph-music-notes text-teal"></i> ${selectedBranch.name} Özel Müzik Listesi</div>
+          <div class="card-title"><i class="ph ph-music-notes text-teal"></i> ${selectedBranch.name} — Müzik Listesi</div>
+          <span style="font-size:0.8rem; background:rgba(0,229,255,0.1); color:var(--color-secondary); padding:0.2rem 0.6rem; border-radius:12px;">${playlist.length} parça</span>
         </div>
+        
         <div style="margin-top: 1rem;">
-           <form onsubmit="window.addBranchSongForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
-             <div class="input-group">
-               <label>Yeni Şarkı Ekle</label>
-               <input type="file" id="newBranchSongFile" class="input-field" accept="audio/*" required>
-             </div>
-             <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Ekle</button>
-           </form>
-           
-           <div id="branchPlaylistArea">
-              <p class="text-muted" style="font-size: 0.85rem; text-align:center; padding: 1rem;">Müzik listesi yükleniyor...</p>
-           </div>
+          <form onsubmit="window.addBranchSongForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div class="input-group">
+              <label><i class="ph ph-upload-simple"></i> Yeni Müzik Ekle</label>
+              <input type="file" id="newBranchSongFile" class="input-field" accept="audio/*" required>
+            </div>
+            <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Müzik Ekle</button>
+          </form>
+          
+          <div id="branchPlaylistArea">
+            ${playlist.length > 0 ? playlistHtml : '<div style="text-align:center; padding: 2rem; color: var(--color-text-muted);"><i class="ph ph-music-note" style="font-size: 2rem; display:block; margin-bottom: 0.5rem;"></i>Bu şubeye özel müzik tanımlanmamış.<br><span style="font-size:0.8rem;">Yukarıdan müzik dosyası yükleyerek başlayın.</span></div>'}
+          </div>
         </div>
       </div>
 
       <!-- Branch Specific Campaigns -->
       <div class="glass-panel dashboard-card">
         <div class="card-header">
-          <div class="card-title"><i class="ph ph-megaphone text-teal"></i> ${selectedBranch.name} Özel Kampanyalar</div>
+          <div class="card-title"><i class="ph ph-megaphone" style="color:#FF9800;"></i> ${selectedBranch.name} — Kampanyalar</div>
+          <span style="font-size:0.8rem; background:rgba(255,152,0,0.1); color:#FF9800; padding:0.2rem 0.6rem; border-radius:12px;">${campaigns.length} kampanya</span>
         </div>
+        
         <div style="margin-top: 1rem;">
-           <form onsubmit="window.addBranchCampaignForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
-             <div class="input-group">
-               <label>Kampanya Adı</label>
-               <input type="text" id="newBranchCampName" class="input-field" required>
-             </div>
-             <div class="input-group">
-               <label>Sıklık</label>
-               <select id="newBranchCampFreq" class="input-field" style="background: var(--color-dark);">
-                 <option value="15 Dakikada Bir">15 Dakikada Bir</option>
-                 <option value="30 Dakikada Bir">30 Dakikada Bir</option>
-                 <option value="1 Saatte Bir">1 Saatte Bir</option>
-               </select>
-             </div>
-             <div class="input-group">
-               <label>Ses Dosyası</label>
-               <input type="file" id="newBranchCampFile" class="input-field" accept="audio/*" required>
-             </div>
-             <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Kampanya Ekle</button>
-           </form>
+          <form onsubmit="window.addBranchCampaignForm(event)" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div class="input-group">
+              <label>Kampanya Adı</label>
+              <input type="text" id="newBranchCampName" class="input-field" placeholder="Örn: Yaz İndirimi Anonsu" required>
+            </div>
+            <div class="input-group">
+              <label><i class="ph ph-upload-simple"></i> Ses Dosyası</label>
+              <input type="file" id="newBranchCampFile" class="input-field" accept="audio/*" required>
+            </div>
+            <button type="submit" class="btn btn-teal btn-block"><i class="ph ph-plus"></i> Şubeye Özel Kampanya Ekle</button>
+          </form>
 
-           <div id="branchCampaignArea">
-              <p class="text-muted" style="font-size: 0.85rem; text-align:center; padding: 1rem;">Kampanyalar yükleniyor...</p>
-           </div>
+          <div id="branchCampaignArea">
+            ${campaigns.length > 0 ? campaignHtml : '<div style="text-align:center; padding: 2rem; color: var(--color-text-muted);"><i class="ph ph-megaphone" style="font-size: 2rem; display:block; margin-bottom: 0.5rem;"></i>Bu şubeye özel kampanya tanımlanmamış.<br><span style="font-size:0.8rem;">Yukarıdan kampanya dosyası yükleyerek başlayın.</span></div>'}
+          </div>
         </div>
       </div>
 
     </div>
-    <script>
-      (async () => {
-        try {
-          const playlist = await api.fetchPlaylist('${window.selectedBranchId}');
-          const campaigns = await api.fetchCampaigns('${window.selectedBranchId}');
-          
-          const pArea = document.getElementById('branchPlaylistArea');
-          const cArea = document.getElementById('branchCampaignArea');
-          
-          if(pArea) pArea.innerHTML = playlist.length > 0 ? playlist.map(m => \`
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.6rem; border-radius:6px; margin-bottom:0.4rem;">
-              <span style="font-size:0.9rem;">\${m.name}</span>
-              <button class="btn" style="padding:0.2rem; color:#F44336;" onclick="window.deleteSong('\${m.id}')"><i class="ph ph-trash"></i></button>
-            </div>
-          \`).join('') : '<p class="text-muted">Özel şarkı yok.</p>';
 
-          if(cArea) cArea.innerHTML = campaigns.length > 0 ? campaigns.map(c => \`
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.6rem; border-radius:6px; margin-bottom:0.4rem;">
-              <div>
-                <div style="font-size:0.9rem; font-weight:600;">\${c.name}</div>
-                <div style="font-size:0.75rem; color:var(--color-text-muted);">\${c.frequency}</div>
-              </div>
-              <button class="btn" style="padding:0.2rem; color:#F44336;" onclick="window.deleteCampaign('\${c.id}')"><i class="ph ph-trash"></i></button>
-            </div>
-          \`).join('') : '<p class="text-muted">Özel kampanya yok.</p>';
-        } catch(e) { console.error(e); }
-      })();
-    </script>
+    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-top: 2rem; animation-delay: 0.2s; border-left: 4px solid #FF9800;">
+      <div style="display:flex; align-items:flex-start; gap: 1rem;">
+        <i class="ph ph-info" style="font-size: 1.5rem; color: #FF9800; flex-shrink:0; margin-top:2px;"></i>
+        <div>
+          <p style="font-size: 0.9rem; color: var(--color-text); margin-bottom: 0.3rem; font-weight: 600;">Akış Düzeni Hakkında</p>
+          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Müzik ve kampanya sıralamalarını yukarı/aşağı oklar ile düzenleyebilirsiniz. Kampanyalar müzik akışı arasında sırayla çalınır. Birden fazla kampanya eklendiğinde çakışma olmaz, her biri sırasıyla oynatılır.</p>
+        </div>
+      </div>
+    </div>
     ` : `
-    <div class="glass-panel" style="padding: 3rem; text-align:center; color: var(--color-text-muted);">
-      <i class="ph ph-arrow-up" style="font-size: 3rem; margin-bottom: 1rem;"></i>
-      <p>Lütfen işlem yapmak istediğiniz şubeyi yukarıdaki listeden seçin.</p>
+    <div class="glass-panel fade-in-up" style="padding: 4rem; text-align:center; color: var(--color-text-muted);">
+      <i class="ph ph-arrow-up" style="font-size: 3rem; margin-bottom: 1rem; display:block;"></i>
+      <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">Lütfen işlem yapmak istediğiniz şubeyi yukarıdaki listeden seçin.</p>
+      <p style="font-size: 0.85rem;">Seçilen şubenin müzik listesini ve kampanya akışını buradan yönetebilirsiniz.</p>
     </div>
     `}
   `;
