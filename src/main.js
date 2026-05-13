@@ -451,10 +451,8 @@ function renderLogin() {
           </div>
           
           <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; user-select: none;">
-            <div style="position: relative; display: flex; align-items: center; cursor: pointer;" onclick="document.getElementById('rememberMe').click()">
-              <input type="checkbox" id="rememberMe" style="width: 20px; height: 20px; accent-color: var(--color-primary); cursor: pointer;" ${isRemembered ? 'checked' : ''}>
-              <label for="rememberMe" style="margin-bottom: 0; margin-left: 0.5rem; cursor: pointer; font-size: 0.95rem; color: var(--color-secondary); font-weight: 500;">Beni Hatırla</label>
-            </div>
+            <input type="checkbox" id="rememberMe" style="width: 18px; height: 18px; accent-color: var(--color-primary); cursor: pointer;" ${isRemembered ? 'checked' : ''}>
+            <label for="rememberMe" style="margin-bottom: 0; cursor: pointer; font-size: 0.95rem; color: var(--color-secondary); font-weight: 500;">Beni Hatırla</label>
           </div>
 
           <button type="submit" class="btn btn-teal btn-block" style="margin-top: 0.5rem;">
