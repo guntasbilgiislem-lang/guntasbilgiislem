@@ -127,6 +127,15 @@ class ApiService {
     if (error) throw new Error('Şube güncellenemedi: ' + error.message);
   }
 
+  async updateBranchStatus(id, musicName, isOffline = false) {
+    const { error } = await supabase.from('branches').update({
+      status: isOffline ? 'offline' : 'online',
+      sync: new Date().toISOString(),
+      music: musicName || 'Güntaş Radyo'
+    }).eq('id', id);
+    if (error) console.warn('Durum güncellenemedi:', error);
+  }
+
   async removeBranch(id) {
     const { error } = await supabase.from('branches').delete().eq('id', id);
     if (error) throw new Error('Şube silinemedi: ' + error.message);
@@ -175,6 +184,21 @@ class ApiService {
   }
 
   // --- PLAYLIST (MUSIC) ---
+  async fetchAllPlaylists() {
+    try {
+      const { data, error } = await supabase.from('playlist').select('*').order('order_index', { ascending: true });
+      if (error && error.message.includes('order_index')) {
+        const { data: d2, error: e2 } = await supabase.from('playlist').select('*');
+        if (e2) throw e2;
+        return d2 || [];
+      }
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      throw new Error('Tüm müzik listeleri getirilemedi: ' + err.message);
+    }
+  }
+
   async fetchPlaylist(branchId = null) {
     try {
       let query = supabase.from('playlist').select('*');
@@ -187,7 +211,6 @@ class ApiService {
 
       let { data, error } = await query.order('order_index', { ascending: true });
       
-      // Handle missing branch_id column or order_index error
       if (error && (error.message.includes('branch_id') || error.message.includes('order_index'))) {
         const globalRes = await supabase.from('playlist').select('*');
         if (globalRes.error) throw globalRes.error;

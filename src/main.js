@@ -639,7 +639,26 @@ window.moveSong = async (id, direction) => {
   // Update UI optimistically
   const mainContent = document.getElementById('mainContent');
   mainContent.innerHTML = getMusicHTML(currentPlaylistData);
-
+window.duplicateCampaign = async (id, name, filePath, isBranch = false) => {
+  try {
+    showToast('Kampanya çoğaltılıyor...', 'info');
+    const branchId = isBranch ? window.selectedBranchId : null;
+    await api.addCampaign({
+      name: name + ' (Kopya)',
+      frequency: 'Akış Sırası', // frequency will be updated by saveUnifiedOrder anyway
+      file_path: filePath
+    }, branchId);
+    showToast('Kampanya başarıyla çoğaltıldı.', 'success');
+    
+    if (isBranch && window.selectedBranchId) {
+      window.handleBranchSelect(window.selectedBranchId);
+    } else {
+      renderApp();
+    }
+  } catch (e) {
+    showToast('Hata: ' + e.message, 'error');
+  }
+};
   // Save to DB
   try {
     const orderedIds = currentPlaylistData.map(s => s.id);
@@ -685,21 +704,18 @@ async function renderApp() {
       const playlist = await api.fetchPlaylist(currentUser.id);
       const campaigns = await api.fetchCampaigns(currentUser.id);
 
-      const combined = [];
-      const pList = [...playlist];
-      const cList = [...campaigns];
-      let ci = 0;
-      for (let i = 0; i < pList.length; i++) {
-        combined.push(pList[i]);
-        if (cList.length > 0 && ci < cList.length && (i + 1) % Math.max(1, Math.ceil(pList.length / (cList.length + 1))) === 0) {
-          combined.push(cList[ci]);
-          ci++;
-        }
-      }
-      while (ci < cList.length) { combined.push(cList[ci]); ci++; }
-
-      currentPlaylistData = combined;
+      currentPlaylistData = window.buildUnifiedList(playlist, campaigns).map(x => x.item);
       
+      // Heartbeat logic
+      if (!window.branchHeartbeatInterval) {
+        const sendHeartbeat = () => {
+          const currentSong = currentPlaylistData[window.radio.currentIndex]?.name || 'Güntaş Radyo';
+          api.updateBranchStatus(currentUser.id, currentSong, isOffline);
+        };
+        sendHeartbeat();
+        window.branchHeartbeatInterval = setInterval(sendHeartbeat, 30000); // 30 seconds
+      }
+
       // PRELOAD THE FIRST SONG TO BYPASS AUTOPLAY RESTRICTIONS
       if (currentPlaylistData && currentPlaylistData.length > 0) {
         window.radio.playlist = currentPlaylistData;
@@ -801,8 +817,12 @@ async function renderApp() {
       currentPlaylistData = playlist;
       mainContent.innerHTML = getDashboardHTML(playlist, branches);
     } else if (currentView === 'music') {
-      currentPlaylistData = await api.fetchPlaylist();
-      mainContent.innerHTML = getMusicHTML(currentPlaylistData);
+      const [allPlaylists, branches] = await Promise.all([
+        api.fetchAllPlaylists(),
+        api.fetchBranches()
+      ]);
+      currentPlaylistData = allPlaylists.filter(p => !p.branch_id);
+      mainContent.innerHTML = getMusicHTML(currentPlaylistData, allPlaylists, branches);
     } else if (currentView === 'campaigns') {
       currentCampaignData = await api.fetchCampaigns();
       mainContent.innerHTML = getCampaignsHTML(currentCampaignData);
@@ -1058,6 +1078,33 @@ function getBranchPlayerHTML(playlist) {
   `;
 }
 
+function formatBranchStatus(b) {
+  if (!b.sync || b.sync === '-') return { status: 'offline', sync: '-', color: '#F44336', label: 'Çevrimdışı' };
+  
+  const lastSync = new Date(b.sync);
+  const now = new Date();
+  const diffMinutes = Math.floor((now - lastSync) / 60000);
+  
+  let status = b.status;
+  if (diffMinutes > 2) status = 'offline';
+  
+  const color = status === 'online' ? '#4CAF50' : '#F44336';
+  const label = status === 'online' ? 'Çevrimiçi' : 'Çevrimdışı';
+  
+  let timeStr = lastSync.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  if (diffMinutes > 1440) {
+    timeStr = Math.floor(diffMinutes / 1440) + ' gün önce';
+  } else if (diffMinutes > 60) {
+    timeStr = Math.floor(diffMinutes / 60) + ' sa. önce';
+  } else if (diffMinutes <= 0) {
+    timeStr = 'Az önce';
+  } else {
+    timeStr = diffMinutes + ' dk. önce';
+  }
+
+  return { status, sync: timeStr, color, label };
+}
+
 function getDashboardHTML(playlist, branches = []) {
   const nextSong = (playlist && playlist.length > 0) ? playlist[0].name : 'Sırada bekleyen parça yok';
 
@@ -1075,9 +1122,9 @@ function getDashboardHTML(playlist, branches = []) {
         </div>
       </td>
       <td style="padding: 1rem;">
-        <div style="display:flex; align-items:center; gap:0.5rem; color: ${b.status === 'online' ? '#4CAF50' : '#F44336'}; font-size: 0.9rem; font-weight: 500;">
+        <div style="display:flex; align-items:center; gap:0.5rem; color: ${formatBranchStatus(b).color}; font-size: 0.9rem; font-weight: 500;">
           <div style="width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor;"></div>
-          ${b.status === 'online' ? 'Çevrimiçi' : 'Çevrimdışı'}
+          ${formatBranchStatus(b).label}
         </div>
       </td>
       <td style="padding: 1rem;">
@@ -1095,7 +1142,7 @@ function getDashboardHTML(playlist, branches = []) {
         </div>
       </td>
       <td style="padding: 1rem; text-align:right;">
-        <span style="font-size:0.8rem; color:var(--color-text-muted);">${b.sync || '-'}</span>
+        <span style="font-size:0.8rem; color:var(--color-text-muted);">${formatBranchStatus(b).sync}</span>
       </td>
     </tr>
   `).join('');
@@ -1182,7 +1229,7 @@ function getDashboardHTML(playlist, branches = []) {
   `;
 }
 
-function getMusicHTML(playlist) {
+function getMusicHTML(playlist, allPlaylists = [], branches = []) {
   const listHtml = playlist.map((m, index) => `
     <li style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2); padding:0.8rem; border-radius:8px; margin-bottom: 0.5rem;">
       <div style="display:flex; align-items:center; gap: 1rem; flex: 1;">
@@ -1203,6 +1250,24 @@ function getMusicHTML(playlist) {
       </div>
     </li>
   `).join('');
+
+  const branchListsHtml = branches.map(b => {
+    const branchPl = allPlaylists.filter(p => p.branch_id === b.id);
+    if (branchPl.length === 0) return '';
+    return `
+      <div style="margin-top: 1.5rem;">
+        <h4 style="color: var(--color-secondary); margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.3rem;"><i class="ph ph-storefront"></i> ${b.name} (${branchPl.length} parça)</h4>
+        <ul style="list-style:none; padding:0; display:flex; flex-direction:column;">
+          ${branchPl.map((m, idx) => `
+            <li style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.1); padding:0.5rem 0.8rem; border-radius:6px; margin-bottom: 0.3rem;">
+              <div style="font-size: 0.85rem;">${idx + 1}. ${m.name}</div>
+              ${m.file_path ? `<button class="btn btn-primary" style="padding: 0.1rem 0.4rem; background: rgba(0, 229, 255, 0.1); border-color: rgba(0, 229, 255, 0.2); color: var(--color-secondary); font-size:0.8rem;" onclick="window.playSong('${m.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+  }).join('');
 
   return `
     <header class="top-header fade-in-up">
@@ -1234,15 +1299,23 @@ function getMusicHTML(playlist) {
     </div>
 
     <div class="grid-cards fade-in-up" style="animation-delay: 0.2s;">
-      <div class="glass-panel dashboard-card">
-        <div class="card-header"><div class="card-title">Kendi Müziklerim (Özel Liste)</div></div>
+      <div class="glass-panel dashboard-card" style="grid-row: span 2;">
+        <div class="card-header"><div class="card-title">Genel Yayın Akışı (Tüm Şubeler)</div></div>
         <ul style="list-style:none; padding:0; margin-top:1rem; display:flex; flex-direction:column;">
-          ${listHtml}
+          ${listHtml || '<li style="text-align:center; padding: 1rem; color: var(--color-text-muted);">Müzik bulunamadı</li>'}
         </ul>
+        
+        ${branchListsHtml ? `
+          <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1);">
+            <div class="card-header"><div class="card-title" style="color:var(--color-primary);"><i class="ph ph-list-star"></i> Şubelere Özel Listeler</div></div>
+            <p style="font-size:0.8rem; color:var(--color-text-muted); margin-bottom:1rem;">Aşağıdaki listeler sadece ilgili şubelerde çalar. Düzenlemek için "Şube Operasyonları" sayfasını kullanın.</p>
+            ${branchListsHtml}
+          </div>
+        ` : ''}
       </div>
 
       <div class="glass-panel dashboard-card">
-        <div class="card-header"><div class="card-title">Müzik Ekle (Supabase)</div></div>
+        <div class="card-header"><div class="card-title">Genel Listeye Müzik Ekle</div></div>
         <form onsubmit="window.addSongForm(event)" style="margin-top: 1rem;">
           <div class="input-group">
             <label>MP3 veya Ses Dosyası Seçin</label>
@@ -1273,6 +1346,7 @@ function getCampaignsHTML(campaigns) {
       </div>
       <div style="display:flex; gap:0.5rem; align-items:center;">
         ${c.file_path ? `<button class="btn btn-primary" style="padding: 0.2rem 0.5rem; background: rgba(0, 229, 255, 0.2); border-color: rgba(0, 229, 255, 0.3); color: var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+        <button class="btn btn-primary" style="padding: 0.2rem 0.5rem; background: rgba(255, 152, 0, 0.2); border-color: rgba(255, 152, 0, 0.3); color: #FF9800;" onclick="window.duplicateCampaign('${c.id}', '${c.name.replace(/'/g, "\\'")}', '${c.file_path || ''}', false)" title="Çoğalt"><i class="ph ph-copy"></i></button>
         <button class="btn btn-primary" style="padding: 0.2rem 0.5rem; background: rgba(244, 67, 54, 0.2); border-color: rgba(244, 67, 54, 0.3); color: #F44336;" onclick="window.deleteCampaign('${c.id}')"><i class="ph ph-trash"></i></button>
       </div>
     </li>
@@ -1330,12 +1404,13 @@ function getBranchesHTML(branches) {
     <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);" class="table-row-hover">
       <td style="padding: 1rem;"><strong>${b.name}</strong><br><span style="font-size:0.8rem; color:var(--color-text-muted);">ID: ${b.id}</span></td>
       <td style="padding: 1rem;">
-        ${b.status === 'online' 
-          ? '<span style="color: #4CAF50; display:flex; align-items:center; gap:0.3rem;"><i class="ph ph-wifi-high"></i> Çevrimiçi</span>' 
-          : '<span style="color: #F44336; display:flex; align-items:center; gap:0.3rem;"><i class="ph ph-wifi-slash"></i> Çevrimdışı</span>'}
+        <span style="color: ${formatBranchStatus(b).color}; display:flex; align-items:center; gap:0.3rem;">
+          <i class="ph ${formatBranchStatus(b).status === 'online' ? 'ph-wifi-high' : 'ph-wifi-slash'}"></i> 
+          ${formatBranchStatus(b).label}
+        </span>
       </td>
       <td style="padding: 1rem;"><span style="background: rgba(255,255,255,0.1); padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.85rem;">${b.music}</span></td>
-      <td style="padding: 1rem; color:var(--color-text-muted); font-size:0.85rem;">${b.sync}</td>
+      <td style="padding: 1rem; color:var(--color-text-muted); font-size:0.85rem;">${formatBranchStatus(b).sync}</td>
       <td style="padding: 1rem; color:var(--color-text-muted); font-size:0.85rem;">${b.password}</td>
       <td style="padding: 1rem; display:flex; gap:0.5rem;">
         <button class="btn btn-primary" style="padding: 0.3rem 0.6rem; background: rgba(0, 229, 255, 0.2); border-color: rgba(0, 229, 255, 0.3); color: var(--color-secondary);" title="Düzenle" onclick="window.editBranch('${b.id}', '${b.name}', '${b.password}')"><i class="ph ph-pencil-simple"></i></button>
@@ -1486,7 +1561,8 @@ function getBranchOpsHTML(branches) {
       </div>
       <div style="display:flex; gap:0.3rem;">
         ${c.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button><button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.12); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.stopPreview()"><i class="ph ph-stop"></i></button>` : ''}
-        <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteCampaign('${c.id}')"><i class="ph ph-trash"></i></button>
+        <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.2); border-radius:6px; color:#FF9800;" onclick="window.duplicateCampaign('${c.id}', '${c.name.replace(/'/g, "\\'")}', '${c.file_path || ''}', true)" title="Çoğalt"><i class="ph ph-copy"></i></button>
+        <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteCampaign('${c.id}')" title="Sil"><i class="ph ph-trash"></i></button>
       </div>
     </div>
   `).join('');
