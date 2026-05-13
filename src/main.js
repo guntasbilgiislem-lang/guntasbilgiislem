@@ -597,11 +597,17 @@ window.addSongForm = async (e) => {
   }
 };
 
+window._previewPlayer = null;
 window.playSong = (url) => {
   if (!url) return showToast('Bu parçanın ses dosyası bulunamadı.', 'error');
-  const player = new Audio(url);
-  player.play();
-  showToast('Önizleme başlatıldı.', 'info');
+  if (window._previewPlayer) { window._previewPlayer.pause(); window._previewPlayer = null; }
+  window._previewPlayer = new Audio(url);
+  window._previewPlayer.play();
+  window._previewPlayer.addEventListener('ended', () => { window._previewPlayer = null; });
+  showToast('Önizleme başlatıldı. Durdurmak için ■ butonuna basın.', 'info');
+};
+window.stopPreview = () => {
+  if (window._previewPlayer) { window._previewPlayer.pause(); window._previewPlayer = null; showToast('Önizleme durduruldu.', 'info'); }
 };
 
 window.moveSong = async (id, direction) => {
@@ -1391,7 +1397,7 @@ function getBranchOpsHTML(branches) {
       <div style="width:24px; height:24px; background:rgba(0,229,255,0.15); border-radius:5px; display:flex; align-items:center; justify-content:center; color:var(--color-secondary); font-weight:700; font-size:0.75rem; flex-shrink:0;">${i+1}</div>
       <div style="flex:1; font-size:0.9rem;">${m.name}</div>
       <div style="display:flex; gap:0.3rem;">
-        ${m.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${m.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+        ${m.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${m.file_path}')"><i class="ph ph-play"></i></button><button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.12); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.stopPreview()"><i class="ph ph-stop"></i></button>` : ''}
         <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteSong('${m.id}')"><i class="ph ph-trash"></i></button>
       </div>
     </div>
@@ -1409,7 +1415,7 @@ function getBranchOpsHTML(branches) {
         ${c.file_path ? `<a href="${c.file_path}" target="_blank" style="font-size:0.75rem; color:var(--color-secondary);">Dosyayı Gör</a>` : ''}
       </div>
       <div style="display:flex; gap:0.3rem;">
-        ${c.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button>` : ''}
+        ${c.file_path ? `<button class="btn" style="padding:0.2rem 0.4rem; background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:var(--color-secondary);" onclick="window.playSong('${c.file_path}')"><i class="ph ph-play"></i></button><button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.12); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.stopPreview()"><i class="ph ph-stop"></i></button>` : ''}
         <button class="btn" style="padding:0.2rem 0.4rem; background:rgba(244,67,54,0.15); border:1px solid rgba(244,67,54,0.2); border-radius:6px; color:#F44336;" onclick="window.deleteCampaign('${c.id}')"><i class="ph ph-trash"></i></button>
       </div>
     </div>
@@ -1499,12 +1505,58 @@ function getBranchOpsHTML(branches) {
 
     </div>
 
-    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-top: 2rem; animation-delay: 0.2s; border-left: 4px solid #FF9800;">
+    <!-- Unified Flow List -->
+    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-top: 2rem; animation-delay: 0.15s;">
+      <div class="card-header" style="margin-bottom: 1rem;">
+        <div class="card-title" style="font-size:1.2rem;"><i class="ph ph-list-checks text-teal"></i> ${selectedBranch.name} — Yayın Akış Sırası</div>
+        <span style="font-size:0.8rem; background:rgba(255,255,255,0.08); padding:0.3rem 0.8rem; border-radius:12px;">${playlist.length + campaigns.length} öğe</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom: 1rem;">Müzik ve kampanyaların birleşik yayın akışı. <span style="color:var(--color-secondary);">Mavi</span> = Müzik, <span style="color:#FF9800;">Turuncu</span> = Kampanya</p>
+      <div style="display:flex; flex-direction:column; gap: 0.3rem;">
+        ${(() => {
+          const combined = [];
+          const pList = [...playlist];
+          const cList = [...campaigns];
+          let ci = 0;
+          for (let i = 0; i < pList.length; i++) {
+            combined.push({ type: 'music', item: pList[i], index: i });
+            if (cList.length > 0 && ci < cList.length && (i + 1) % Math.max(1, Math.ceil(pList.length / (cList.length + 1))) === 0) {
+              combined.push({ type: 'campaign', item: cList[ci], index: ci });
+              ci++;
+            }
+          }
+          while (ci < cList.length) { combined.push({ type: 'campaign', item: cList[ci], index: ci }); ci++; }
+          if (combined.length === 0) return '<div style="text-align:center; padding:2rem; color:var(--color-text-muted);">Henüz öğe eklenmemiş.</div>';
+          return combined.map((entry, idx) => {
+            const isMusic = entry.type === 'music';
+            const color = isMusic ? 'var(--color-secondary)' : '#FF9800';
+            const bgColor = isMusic ? 'rgba(0,229,255,0.08)' : 'rgba(255,152,0,0.08)';
+            const icon = isMusic ? 'ph-music-note' : 'ph-megaphone';
+            const label = isMusic ? 'Müzik' : 'Kampanya';
+            const fp = entry.item.file_path || '';
+            return `
+              <div style="display:flex; align-items:center; gap:0.75rem; background:${bgColor}; padding:0.5rem 0.8rem; border-radius:8px; border-left: 3px solid ${color};">
+                <div style="width:26px; height:26px; background:rgba(255,255,255,0.06); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--color-text-muted); font-size:0.75rem; font-weight:700; flex-shrink:0;">${idx + 1}</div>
+                <i class="ph ${icon}" style="font-size:1.1rem; color:${color}; flex-shrink:0;"></i>
+                <div style="flex:1;">
+                  <span style="font-size:0.85rem; font-weight:500;">${entry.item.name}</span>
+                  <span style="font-size:0.7rem; margin-left:0.5rem; background:${bgColor}; color:${color}; padding:0.1rem 0.4rem; border-radius:4px; border:1px solid ${color}20;">${label}</span>
+                </div>
+                <div style="display:flex; gap:0.3rem;">
+                  ${fp ? `<button class="btn" style="padding:0.15rem 0.35rem; background:rgba(0,229,255,0.12); border:1px solid rgba(0,229,255,0.2); border-radius:5px; color:var(--color-secondary); font-size:0.85rem;" onclick="window.playSong('${fp}')"><i class="ph ph-play"></i></button><button class="btn" style="padding:0.15rem 0.35rem; background:rgba(244,67,54,0.12); border:1px solid rgba(244,67,54,0.2); border-radius:5px; color:#F44336; font-size:0.85rem;" onclick="window.stopPreview()"><i class="ph ph-stop"></i></button>` : ''}
+                </div>
+              </div>`;
+          }).join('');
+        })()}
+      </div>
+    </div>
+
+    <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-top: 1.5rem; animation-delay: 0.2s; border-left: 4px solid #FF9800;">
       <div style="display:flex; align-items:flex-start; gap: 1rem;">
         <i class="ph ph-info" style="font-size: 1.5rem; color: #FF9800; flex-shrink:0; margin-top:2px;"></i>
         <div>
           <p style="font-size: 0.9rem; color: var(--color-text); margin-bottom: 0.3rem; font-weight: 600;">Akış Düzeni Hakkında</p>
-          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Müzik ve kampanya sıralamalarını yukarı/aşağı oklar ile düzenleyebilirsiniz. Kampanyalar müzik akışı arasında sırayla çalınır. Birden fazla kampanya eklendiğinde çakışma olmaz, her biri sırasıyla oynatılır.</p>
+          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Kampanyalar müzik parçaları arasına eşit aralıklarla yerleştirilir. Sıralamayı değiştirmek için yukarıdaki müzik ve kampanya listelerindeki okları kullanın.</p>
         </div>
       </div>
     </div>
