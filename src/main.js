@@ -371,6 +371,7 @@ async function handleLogin(e) {
   e.preventDefault();
   const user = document.getElementById('username').value;
   const pass = document.getElementById('password').value;
+  const rememberMe = document.getElementById('rememberMe').checked;
   const btn = e.target.querySelector('button[type="submit"]');
   const errorEl = document.getElementById('loginError');
   
@@ -380,6 +381,18 @@ async function handleLogin(e) {
   
   try {
     currentUser = await api.login(user, pass);
+    
+    // Remember Me Logic
+    if (rememberMe) {
+      localStorage.setItem('remembered_username', user);
+      localStorage.setItem('remembered_password', pass);
+      localStorage.setItem('remember_me', 'true');
+    } else {
+      localStorage.removeItem('remembered_username');
+      localStorage.removeItem('remembered_password');
+      localStorage.setItem('remember_me', 'false');
+    }
+
     offlineAudio.startRecording(); // Start caching audio
     showToast(`Hoşgeldiniz, ${currentUser.name}`, 'success');
     renderApp();
@@ -415,6 +428,10 @@ function navigateTo(view) {
 }
 
 function renderLogin() {
+  const savedUser = localStorage.getItem('remembered_username') || '';
+  const savedPass = localStorage.getItem('remembered_password') || '';
+  const isRemembered = localStorage.getItem('remember_me') === 'true';
+
   app.innerHTML = `
     <div class="login-container">
       <div class="glass-panel login-card fade-in">
@@ -426,13 +443,21 @@ function renderLogin() {
         <form id="loginForm">
           <div class="input-group">
             <label for="username">Kullanıcı Adı</label>
-            <input type="text" id="username" class="input-field" placeholder="admin" required>
+            <input type="text" id="username" class="input-field" placeholder="admin" value="${savedUser}" required>
           </div>
           <div class="input-group">
             <label for="password">Şifre</label>
-            <input type="password" id="password" class="input-field" placeholder="••••••••" required>
+            <input type="password" id="password" class="input-field" placeholder="••••••••" value="${savedPass}" required>
           </div>
-          <button type="submit" class="btn btn-teal btn-block" style="margin-top: 1rem;">
+          
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; user-select: none;">
+            <div style="position: relative; display: flex; align-items: center; cursor: pointer;" onclick="document.getElementById('rememberMe').click()">
+              <input type="checkbox" id="rememberMe" style="width: 20px; height: 20px; accent-color: var(--color-primary); cursor: pointer;" ${isRemembered ? 'checked' : ''}>
+              <label for="rememberMe" style="margin-bottom: 0; margin-left: 0.5rem; cursor: pointer; font-size: 0.95rem; color: var(--color-secondary); font-weight: 500;">Beni Hatırla</label>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-teal btn-block" style="margin-top: 0.5rem;">
             <i class="ph ph-sign-in"></i> Giriş Yap
           </button>
         </form>
