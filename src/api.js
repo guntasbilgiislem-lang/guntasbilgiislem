@@ -223,10 +223,20 @@ class ApiService {
   }
 
   async reorderPlaylist(orderedIds) {
-    // Update each item with its new order_index
     const promises = orderedIds.map((id, index) => 
       supabase.from('playlist').update({ order_index: index }).eq('id', id)
     );
+    await Promise.all(promises);
+  }
+
+  async saveUnifiedOrder(combinedList) {
+    const promises = combinedList.map((item, index) => {
+      if (item.type === 'music') {
+        return supabase.from('playlist').update({ order_index: index }).eq('id', item.id);
+      } else if (item.type === 'campaign') {
+        return supabase.from('campaigns').update({ frequency: String(index) }).eq('id', item.id);
+      }
+    });
     await Promise.all(promises);
   }
 

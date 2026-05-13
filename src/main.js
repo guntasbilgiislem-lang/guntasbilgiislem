@@ -840,10 +840,34 @@ window.moveCampaign = async (id, direction) => {
   mainContent.innerHTML = getCampaignsHTML(currentCampaignData);
 };
 
-// BRANCH OPS HELPERS
+window.buildUnifiedList = (playlist, campaigns) => {
+  let combined = [
+    ...playlist.map(p => ({type: 'music', id: p.id, item: p, order: p.order_index})), 
+    ...campaigns.map(c => ({type: 'campaign', id: c.id, item: c, order: isNaN(parseInt(c.frequency)) ? 9999 : parseInt(c.frequency)}))
+  ];
+  
+  const hasOrders = combined.some(c => c.order !== undefined && c.order !== 9999 && c.order !== null);
+  if (hasOrders) {
+    combined.sort((a,b) => (a.order || 0) - (b.order || 0));
+  } else {
+    combined = [];
+    let ci = 0;
+    for (let i = 0; i < playlist.length; i++) {
+      combined.push({ type: 'music', id: playlist[i].id, item: playlist[i] });
+      if (campaigns.length > 0 && ci < campaigns.length && (i + 1) % Math.max(1, Math.ceil(playlist.length / (campaigns.length + 1))) === 0) {
+        combined.push({ type: 'campaign', id: campaigns[ci].id, item: campaigns[ci] });
+        ci++;
+      }
+    }
+    while (ci < campaigns.length) { combined.push({ type: 'campaign', id: campaigns[ci].id, item: campaigns[ci] }); ci++; }
+  }
+  return combined;
+};
+
 window.selectedBranchId = null;
 window.branchPlaylistData = [];
 window.branchCampaignData = [];
+window.branchCombinedData = [];
 
 window.handleBranchSelect = async (id) => {
   window.selectedBranchId = id;
@@ -853,12 +877,34 @@ window.handleBranchSelect = async (id) => {
     try {
       window.branchPlaylistData = await api.fetchPlaylist(id);
       window.branchCampaignData = await api.fetchCampaigns(id);
+      window.branchCombinedData = window.buildUnifiedList(window.branchPlaylistData, window.branchCampaignData);
     } catch(e) {
       window.branchPlaylistData = [];
       window.branchCampaignData = [];
+      window.branchCombinedData = [];
     }
   }
   mainContent.innerHTML = getBranchOpsHTML(branches);
+};
+
+window.moveUnifiedItem = async (id, direction) => {
+  const idx = window.branchCombinedData.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  if (direction === 'up' && idx > 0) {
+    [window.branchCombinedData[idx], window.branchCombinedData[idx - 1]] = [window.branchCombinedData[idx - 1], window.branchCombinedData[idx]];
+  } else if (direction === 'down' && idx < window.branchCombinedData.length - 1) {
+    [window.branchCombinedData[idx], window.branchCombinedData[idx + 1]] = [window.branchCombinedData[idx + 1], window.branchCombinedData[idx]];
+  } else return;
+  
+  const branches = await api.fetchBranches();
+  document.getElementById('mainContent').innerHTML = getBranchOpsHTML(branches);
+  
+  try {
+    await api.saveUnifiedOrder(window.branchCombinedData);
+    showToast('Yayın akışı sıralaması kaydedildi.', 'success');
+  } catch(e) {
+    showToast('Sıralama kaydedilemedi: ' + e.message, 'error');
+  }
 };
 
 window.moveBranchSong = async (id, direction) => {
@@ -1533,25 +1579,13 @@ function getBranchOpsHTML(branches) {
     <div class="glass-panel fade-in-up" style="padding: 1.5rem; margin-top: 2rem; animation-delay: 0.15s;">
       <div class="card-header" style="margin-bottom: 1rem;">
         <div class="card-title" style="font-size:1.2rem;"><i class="ph ph-list-checks text-teal"></i> ${selectedBranch.name} — Yayın Akış Sırası</div>
-        <span style="font-size:0.8rem; background:rgba(255,255,255,0.08); padding:0.3rem 0.8rem; border-radius:12px;">${playlist.length + campaigns.length} öğe</span>
+        <span style="font-size:0.8rem; background:rgba(255,255,255,0.08); padding:0.3rem 0.8rem; border-radius:12px;">${window.branchCombinedData.length} öğe</span>
       </div>
-      <p style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom: 1rem;">Müzik ve kampanyaların birleşik yayın akışı. <span style="color:var(--color-secondary);">Mavi</span> = Müzik, <span style="color:#FF9800;">Turuncu</span> = Kampanya</p>
+      <p style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom: 1rem;">Müzik ve kampanyaların birleşik yayın akışı. Buradan doğrudan sıralamayı ayarlayabilirsiniz.</p>
       <div style="display:flex; flex-direction:column; gap: 0.3rem;">
         ${(() => {
-          const combined = [];
-          const pList = [...playlist];
-          const cList = [...campaigns];
-          let ci = 0;
-          for (let i = 0; i < pList.length; i++) {
-            combined.push({ type: 'music', item: pList[i], index: i });
-            if (cList.length > 0 && ci < cList.length && (i + 1) % Math.max(1, Math.ceil(pList.length / (cList.length + 1))) === 0) {
-              combined.push({ type: 'campaign', item: cList[ci], index: ci });
-              ci++;
-            }
-          }
-          while (ci < cList.length) { combined.push({ type: 'campaign', item: cList[ci], index: ci }); ci++; }
-          if (combined.length === 0) return '<div style="text-align:center; padding:2rem; color:var(--color-text-muted);">Henüz öğe eklenmemiş.</div>';
-          return combined.map((entry, idx) => {
+          if (window.branchCombinedData.length === 0) return '<div style="text-align:center; padding:2rem; color:var(--color-text-muted);">Henüz öğe eklenmemiş.</div>';
+          return window.branchCombinedData.map((entry, idx) => {
             const isMusic = entry.type === 'music';
             const color = isMusic ? 'var(--color-secondary)' : '#FF9800';
             const bgColor = isMusic ? 'rgba(0,229,255,0.08)' : 'rgba(255,152,0,0.08)';
@@ -1560,6 +1594,10 @@ function getBranchOpsHTML(branches) {
             const fp = entry.item.file_path || '';
             return `
               <div style="display:flex; align-items:center; gap:0.75rem; background:${bgColor}; padding:0.5rem 0.8rem; border-radius:8px; border-left: 3px solid ${color};">
+                <div style="display:flex; flex-direction:column; gap:0.15rem;">
+                  <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveUnifiedItem('${entry.id}','up')" ${idx===0?'disabled':''}><i class="ph ph-caret-up"></i></button>
+                  <button class="btn" style="padding:0.1rem; background:transparent; border:none; color:var(--color-text-muted); font-size:0.85rem;" onclick="window.moveUnifiedItem('${entry.id}','down')" ${idx===window.branchCombinedData.length-1?'disabled':''}><i class="ph ph-caret-down"></i></button>
+                </div>
                 <div style="width:26px; height:26px; background:rgba(255,255,255,0.06); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--color-text-muted); font-size:0.75rem; font-weight:700; flex-shrink:0;">${idx + 1}</div>
                 <i class="ph ${icon}" style="font-size:1.1rem; color:${color}; flex-shrink:0;"></i>
                 <div style="flex:1;">
@@ -1580,7 +1618,7 @@ function getBranchOpsHTML(branches) {
         <i class="ph ph-info" style="font-size: 1.5rem; color: #FF9800; flex-shrink:0; margin-top:2px;"></i>
         <div>
           <p style="font-size: 0.9rem; color: var(--color-text); margin-bottom: 0.3rem; font-weight: 600;">Akış Düzeni Hakkında</p>
-          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Kampanyalar müzik parçaları arasına eşit aralıklarla yerleştirilir. Sıralamayı değiştirmek için yukarıdaki müzik ve kampanya listelerindeki okları kullanın.</p>
+          <p style="font-size: 0.85rem; color: var(--color-text-muted);">Sıralamayı değiştirmek için yukarıdaki Yayın Akış Sırası listesindeki okları kullanın. Yaptığınız değişiklikler otomatik olarak kaydedilir.</p>
         </div>
       </div>
     </div>
