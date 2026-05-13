@@ -517,7 +517,11 @@ window.deleteCampaign = async (id) => {
     try {
       await api.removeCampaign(id);
       showToast('Kampanya silindi.', 'success');
-      renderApp();
+      if (currentView === 'branch_ops' && window.selectedBranchId) {
+        window.handleBranchSelect(window.selectedBranchId);
+      } else {
+        renderApp();
+      }
     } catch (e) {
       showToast('Hata: ' + e.message, 'error');
     }
@@ -556,7 +560,11 @@ window.deleteSong = async (id) => {
     try {
       await api.removeSong(id);
       showToast('Şarkı listeden çıkarıldı.', 'success');
-      renderApp();
+      if (currentView === 'branch_ops' && window.selectedBranchId) {
+        window.handleBranchSelect(window.selectedBranchId);
+      } else {
+        renderApp();
+      }
     } catch (e) {
       showToast('Hata: ' + e.message, 'error');
     }
